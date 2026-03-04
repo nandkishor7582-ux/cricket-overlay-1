@@ -26,7 +26,7 @@ from scraper_core import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger(__name__)
 
-app = Flask(__name__, static_folder="static")
+app = Flask(__name__)
 
 # ── Per-match state ──────────────────────────────────────────────────────────
 _matches   = {}   # match_id -> {"data": {...}, "last_fetch": float, "error": str}
