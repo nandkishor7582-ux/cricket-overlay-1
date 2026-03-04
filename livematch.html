@@ -1,0 +1,1618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cricket Live Ground Overlay</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@600;700&family=Orbitron:wght@700;900&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --gold:#FFD700;--orange:#FF6B00;--red:#E8001D;--green:#00E676;
+  --sky:#00CFFF;--blue:#0050FF;--purple:#7C3AED;--white:#ffffff;
+}
+html,body{
+  width:1280px;height:720px;overflow:hidden;
+  background:transparent;
+  font-family:'Rajdhani',sans-serif;color:#fff;
+}
+.root{width:1280px;height:720px;position:relative;overflow:hidden;}
+
+/* ═══════════════════════════════════════════
+   BACKGROUND + ATMOSPHERE
+═══════════════════════════════════════════ */
+.bg-field{
+  position:absolute;inset:0;
+  background:radial-gradient(ellipse 88% 92% at 50% 55%,
+    #1a4a0a 0%,#0d2e05 45%,#051202 75%,#010402 100%);
+}
+#atmCanvas{position:absolute;inset:0;z-index:1;pointer-events:none;}
+
+/* ═══════════════════════════════════════════
+   TOP BAR — 3D Glassy Blue ↔ Red
+═══════════════════════════════════════════ */
+.top-bar{
+  position:absolute;top:0;left:0;right:0;height:100px;z-index:60;
+  display:grid;grid-template-columns:1fr 160px 230px 160px 1fr;
+  /* Deep glass base */
+  background:
+    linear-gradient(180deg,
+      rgba(3,8,22,0.98) 0%,
+      rgba(5,12,32,0.96) 50%,
+      rgba(3,8,20,0.94) 100%);
+  /* 3D elevated shadow */
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.06) inset,
+    0 8px 60px rgba(0,0,0,0.9),
+    0 3px 0 rgba(0,60,200,0.25);
+}
+
+/* ── Top glowing border: Blue left → White center → Red right ── */
+.top-bar::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:5px;
+  background:linear-gradient(90deg,
+    #0030CC 0%,
+    #0070FF 12%,
+    #00B4FF 25%,
+    rgba(180,220,255,0.9) 46%,
+    rgba(255,255,255,1) 50%,
+    rgba(255,200,180,0.9) 54%,
+    #FF4040 75%,
+    #E8001D 88%,
+    #CC0020 100%);
+  /* 3D raised effect — double glow */
+  box-shadow:
+    0 0  8px 1px rgba(0,100,255,0.9),
+    0 0 22px 3px rgba(0,100,255,0.5),
+    0 0  8px 1px rgba(255,0,40,0.9),
+    0 0 22px 3px rgba(255,0,40,0.5);
+  animation:topBorderGlow 3s ease-in-out infinite alternate;
+}
+@keyframes topBorderGlow{
+  0%{
+    box-shadow:0 0 10px 2px rgba(0,100,255,1),0 0 30px 5px rgba(0,100,255,0.6),
+               0 0  5px 1px rgba(255,0,40,0.5),0 0 15px 2px rgba(255,0,40,0.3);
+  }
+  100%{
+    box-shadow:0 0  5px 1px rgba(0,100,255,0.5),0 0 15px 2px rgba(0,100,255,0.3),
+               0 0 10px 2px rgba(255,0,40,1),  0 0 30px 5px rgba(255,0,40,0.6);
+  }
+}
+
+/* Bottom divider line */
+.top-bar::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,
+    rgba(0,100,255,0.5) 0%,
+    rgba(255,255,255,0.12) 50%,
+    rgba(255,0,40,0.5) 100%);
+}
+
+/* ── Team side panels ── */
+.team-side{
+  display:flex;align-items:center;gap:14px;padding:0 20px;
+  position:relative;overflow:hidden;
+}
+.team-side.right{flex-direction:row-reverse;}
+
+/* Glassy tint per side */
+.team-side.left{
+  background:linear-gradient(120deg,rgba(0,60,200,0.15) 0%,transparent 55%);
+}
+.team-side.right{
+  background:linear-gradient(240deg,rgba(220,0,30,0.15) 0%,transparent 55%);
+}
+
+/* ── Flag with spinning gradient ring ── */
+.flag-wrap{
+  position:relative;width:72px;height:72px;flex-shrink:0;
+}
+/* Spinning conic gradient ring */
+.flag-ring{
+  position:absolute;inset:-3px;border-radius:50%;
+  animation:spinRing 4s linear infinite;
+  z-index:0;
+}
+.flag-ring.blue{background:conic-gradient(#0050FF 0%,#00CFFF 40%,transparent 60%,#0050FF 100%);}
+.flag-ring.red {background:conic-gradient(#E8001D 0%,#FF6B00 40%,transparent 60%,#E8001D 100%);}
+@keyframes spinRing{to{transform:rotate(360deg);}}
+.flag-inner{
+  position:absolute;inset:3px;border-radius:50%;overflow:hidden;
+  background:#05101e;z-index:1;
+  display:flex;align-items:center;justify-content:center;font-size:26px;
+  box-shadow:inset 0 2px 10px rgba(0,0,0,0.7);
+}
+.flag-inner img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
+
+/* ── Team info ── */
+.t-info{display:flex;flex-direction:column;justify-content:center;gap:1px;}
+.t-info.right{align-items:flex-end;}
+.t-name{
+  font-family:'Orbitron',sans-serif;font-size:15px;font-weight:900;
+  letter-spacing:3px;text-transform:uppercase;line-height:1;
+}
+.t-name.left {color:#93C5FD;text-shadow:0 0 14px rgba(0,100,255,0.6);}
+.t-name.right{color:#FCA5A5;text-shadow:0 0 14px rgba(255,0,40,0.6);}
+.t-score{
+  font-family:'Bebas Neue';font-size:62px;line-height:0.95;color:#fff;
+  text-shadow:0 2px 0 rgba(0,0,0,0.8),0 0 24px rgba(255,255,255,0.12);
+  letter-spacing:2px;
+}
+.t-overs{
+  font-family:'Teko',sans-serif;font-size:21px;line-height:1;
+  color:rgba(255,255,255,0.45);letter-spacing:1.5px;
+}
+
+/* ── Center panel ── */
+.center-panel{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  position:relative;overflow:hidden;
+  background:linear-gradient(180deg,rgba(0,25,8,0.95),rgba(0,15,5,0.98));
+  border-left:1px solid rgba(0,100,255,0.18);
+  border-right:1px solid rgba(255,0,40,0.18);
+}
+.center-panel::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse at 50% 50%,rgba(0,200,80,0.07),transparent 65%);
+  pointer-events:none;
+}
+.live-pill{
+  font-family:'Orbitron',sans-serif;font-size:12px;font-weight:900;
+  letter-spacing:2.5px;padding:4px 18px;border-radius:20px;
+  position:relative;z-index:1;
+}
+.pill-live{
+  background:linear-gradient(135deg,#B91C1C,#DC2626);
+  box-shadow:0 0 18px rgba(220,38,38,0.9),0 2px 0 rgba(255,100,100,0.3) inset;
+  animation:livePulse 1.8s ease-in-out infinite;
+}
+@keyframes livePulse{
+  0%,100%{box-shadow:0 0 18px rgba(220,38,38,0.9),0 2px 0 rgba(255,100,100,0.3) inset;}
+  50%{box-shadow:0 0 32px rgba(255,50,50,1),0 0 60px rgba(220,38,38,0.5),0 2px 0 rgba(255,100,100,0.3) inset;}
+}
+.pill-break{background:linear-gradient(135deg,#1E3A8A,#1D4ED8);box-shadow:0 0 14px rgba(30,58,138,0.8);}
+.pill-win  {background:linear-gradient(135deg,#065F46,#059669);box-shadow:0 0 14px rgba(5,150,105,0.8);}
+.c-crr{
+  font-family:'Teko',sans-serif;font-size:26px;color:var(--green);
+  letter-spacing:1.5px;position:relative;z-index:1;
+  text-shadow:0 0 12px rgba(0,230,118,0.5);
+}
+.c-fmt{font-family:'Orbitron',sans-serif;font-size:9px;color:rgba(255,255,255,0.3);letter-spacing:2px;position:relative;z-index:1;}
+.c-time{font-family:'Orbitron',sans-serif;font-size:8px;color:rgba(255,255,255,0.2);position:relative;z-index:1;}
+
+/* ── Top Bar Over Panels ── */
+.top-over-panel{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;padding:4px 14px 4px 8px;position:relative;overflow:visible;
+}
+.top-over-panel.last-over{
+  background:linear-gradient(135deg,#e91e8c 0%,#c2185b 50%,#ad1457 100%);
+  /* Right side parabolic: bulges inward (concave on right) */
+  clip-path: polygon(0% 0%, 88% 0%, 100% 18%, 100% 50%, 100% 82%, 88% 100%, 0% 100%);
+  padding-right:18px;
+  box-shadow:4px 0 18px rgba(233,30,140,0.45);
+}
+.top-over-panel.curr-over{
+  background:linear-gradient(135deg,#ad1457 0%,#c2185b 50%,#e91e8c 100%);
+  /* Left side parabolic: bulges inward (concave on left) */
+  clip-path: polygon(12% 0%, 100% 0%, 100% 100%, 12% 100%, 0% 82%, 0% 50%, 0% 18%);
+  padding-left:18px;
+  box-shadow:-4px 0 18px rgba(233,30,140,0.45);
+}
+.top-ov-lbl{
+  font-family:'Orbitron',sans-serif;font-size:8px;font-weight:700;
+  letter-spacing:2px;color:rgba(255,255,255,0.95);text-transform:uppercase;
+  text-shadow:0 1px 4px rgba(0,0,0,0.5);
+}
+.top-ov-balls{display:flex;gap:3px;align-items:center;flex-wrap:wrap;justify-content:center;}
+.tob{
+  width:22px;height:22px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Bebas Neue';font-size:11px;
+  transition:all .3s ease;
+}
+.tob-dot{background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.1);}
+.tob-0  {background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.4);border:1px solid rgba(255,255,255,0.15);}
+.tob-1,.tob-2,.tob-3{background:linear-gradient(135deg,#1B5E20,#2E7D32);color:#fff;border:1px solid #4CAF50;}
+.tob-4  {background:linear-gradient(135deg,#E65100,#F57C00);color:#fff;border:1px solid var(--gold);box-shadow:0 0 7px rgba(255,109,0,0.7);}
+.tob-6  {background:linear-gradient(135deg,#7B0000,#C62828);color:#fff;border:1px solid #EF5350;box-shadow:0 0 9px rgba(198,40,40,0.9);}
+.tob-W  {background:linear-gradient(135deg,#6A0036,#AD1457);color:#fff;border:1px solid #E91E63;box-shadow:0 0 9px rgba(173,20,87,0.9);}
+.tob-WD,.tob-NB{background:linear-gradient(135deg,#311B92,#6A1FC2);color:#fff;border:1px solid #9C27B0;}
+.top-ov-run{font-family:'Bebas Neue';font-size:14px;color:var(--gold);margin-top:1px;}
+
+/* ── SPECIAL EFFECTS OVERLAY ── */
+#fxCanvas{
+  position:absolute;inset:0;z-index:999;pointer-events:none;
+}
+#fxBanner{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(0);
+  z-index:1000;pointer-events:none;
+  font-family:'Orbitron',sans-serif;font-size:80px;font-weight:900;
+  letter-spacing:6px;text-transform:uppercase;
+  text-align:center;padding:20px 50px;border-radius:12px;
+  text-shadow:0 4px 0 rgba(0,0,0,0.5);
+  transition:none;
+  white-space:nowrap;
+}
+#fxBanner.fx-show{
+  animation:fxBannerAnim 2.2s ease forwards;
+}
+@keyframes fxBannerAnim{
+  0%  {transform:translate(-50%,-50%) scale(0.3) rotate(-5deg);opacity:0;}
+  15% {transform:translate(-50%,-50%) scale(1.15) rotate(1deg);opacity:1;}
+  25% {transform:translate(-50%,-50%) scale(1) rotate(0deg);opacity:1;}
+  70% {transform:translate(-50%,-50%) scale(1) rotate(0deg);opacity:1;}
+  100%{transform:translate(-50%,-50%) scale(0.8) rotate(2deg);opacity:0;}
+}
+.fx-4{
+  color:#FFD700;
+  background:linear-gradient(135deg,rgba(230,81,0,0.95),rgba(245,124,0,0.95));
+  border:3px solid #FFD700;
+  box-shadow:0 0 60px rgba(255,180,0,0.8),0 0 120px rgba(255,100,0,0.4),inset 0 2px 0 rgba(255,255,255,0.3);
+}
+.fx-6{
+  color:#fff;
+  background:linear-gradient(135deg,rgba(123,0,0,0.95),rgba(198,40,40,0.95));
+  border:3px solid #EF5350;
+  box-shadow:0 0 60px rgba(220,50,50,0.9),0 0 120px rgba(150,0,0,0.5),inset 0 2px 0 rgba(255,255,255,0.2);
+}
+.fx-W{
+  color:#FF1744;
+  background:linear-gradient(135deg,rgba(50,0,100,0.97),rgba(106,0,54,0.97));
+  border:3px solid #E91E63;
+  box-shadow:0 0 60px rgba(233,30,99,0.9),0 0 120px rgba(100,0,50,0.5),inset 0 2px 0 rgba(255,255,255,0.15);
+}
+
+/* ═══════════════════════════════════════════
+   GROUND  (left:240px → right:240px, top:100px → bottom:0)
+═══════════════════════════════════════════ */
+.ground-wrap{
+  position:absolute;top:100px;left:240px;right:240px;bottom:0;
+  z-index:2;
+}
+.ground-wrap svg{width:100%;height:100%;}
+
+/* ═══════════════════════════════════════════
+   FIELD TOKENS
+═══════════════════════════════════════════ */
+#fieldLayer{
+  position:absolute;top:100px;left:0;right:0;bottom:0;
+  z-index:22;pointer-events:none;
+}
+.ftok{
+  position:absolute;transform:translate(-50%,-50%);
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+}
+.tok-ring{
+  border-radius:50%;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+  position:relative;
+  box-shadow:0 4px 14px rgba(0,0,0,0.85);
+}
+.tok-ring img{width:100%;height:100%;object-fit:cover;object-position:top center;}
+.tok-emoji{font-size:15px;line-height:1;}
+.tok-lbl{
+  font-family:'Teko',sans-serif;font-size:12px;font-weight:700;
+  color:#fff;text-shadow:0 0 6px rgba(0,0,0,1),0 1px 3px rgba(0,0,0,1);
+  background:rgba(0,0,0,0.72);padding:0 5px;border-radius:3px;
+  max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+/* Size variants */
+.sz-bat .tok-ring{width:54px;height:54px;border:2.5px solid var(--gold);
+  box-shadow:0 0 0 1px rgba(255,215,0,0.2),0 0 14px rgba(255,215,0,0.55),0 4px 14px rgba(0,0,0,0.85);}
+.sz-bowl .tok-ring{width:48px;height:48px;border:2.5px solid var(--sky);
+  box-shadow:0 0 0 1px rgba(0,207,255,0.2),0 0 12px rgba(0,207,255,0.55),0 4px 14px rgba(0,0,0,0.85);}
+.sz-wk .tok-ring{width:40px;height:40px;border:2px solid var(--purple);
+  box-shadow:0 0 0 1px rgba(124,58,237,0.2),0 0 10px rgba(124,58,237,0.5),0 4px 14px rgba(0,0,0,0.85);}
+.sz-ump .tok-ring{width:68px;height:68px;border:2.5px solid rgba(255,255,255,0.75);
+  box-shadow:0 0 14px rgba(255,255,255,0.3),0 4px 14px rgba(0,0,0,0.85);}
+.sz-field .tok-ring{width:34px;height:34px;border:2px solid rgba(255,255,255,0.35);
+  box-shadow:0 4px 10px rgba(0,0,0,0.8);}
+
+/* Ground shadow under each token */
+.tok-gnd{
+  width:36px;height:7px;margin-top:-3px;
+  background:radial-gradient(ellipse,rgba(0,0,0,0.5),transparent 70%);
+  border-radius:50%;filter:blur(2px);
+}
+
+/* Animations */
+.anim-bat{animation:batSwing 2.2s ease-in-out infinite;}
+.anim-bowl{animation:bowlRun 1.1s ease-in-out infinite;}
+.anim-wk{animation:wkCrouch 1.6s ease-in-out infinite;}
+@keyframes batSwing{
+  0%,100%{transform:translate(-50%,-50%);}
+  30%{transform:translate(-50%,-50%) rotate(9deg) translateY(-2px);}
+  65%{transform:translate(-50%,-50%) rotate(-4deg);}
+}
+@keyframes bowlRun{
+  0%,100%{transform:translate(-50%,-50%);}
+  50%{transform:translate(-50%,-50%) translateY(-6px) rotate(3deg);}
+}
+@keyframes wkCrouch{
+  0%,100%{transform:translate(-50%,-50%) scaleY(1);}
+  50%{transform:translate(-50%,-50%) scaleY(0.88);}
+}
+/* Strike ring pulse — applied to bat token on strike */
+.on-strike .tok-ring{
+  animation:strikeGlow 1.2s ease-in-out infinite;
+}
+@keyframes strikeGlow{
+  0%,100%{box-shadow:0 0 0 1px rgba(255,215,0,0.2),0 0 14px rgba(255,215,0,0.5),0 4px 14px rgba(0,0,0,0.85);}
+  50%{box-shadow:0 0 0 1px rgba(255,215,0,0.5),0 0 28px rgba(255,215,0,1),0 0 50px rgba(255,215,0,0.4),0 4px 14px rgba(0,0,0,0.85);}
+}
+
+/* ═══════════════════════════════════════════
+   LEFT PANEL — Batsmen stacked
+═══════════════════════════════════════════ */
+.side-panel{
+  position:absolute;top:100px;bottom:0;width:240px;z-index:30;
+  display:flex;flex-direction:column;
+}
+.side-panel.left{
+  left:0;
+  background:linear-gradient(180deg,rgba(0,20,70,0.92),rgba(0,10,45,0.95));
+  border-right:1px solid rgba(0,100,255,0.2);
+  box-shadow:inset -1px 0 0 rgba(0,150,255,0.08),3px 0 24px rgba(0,0,0,0.6);
+}
+.side-panel.right{
+  right:0;
+  background:linear-gradient(180deg,rgba(70,5,10,0.92),rgba(45,3,6,0.95));
+  border-left:1px solid rgba(255,0,40,0.2);
+  box-shadow:inset 1px 0 0 rgba(255,50,30,0.08),-3px 0 24px rgba(0,0,0,0.6);
+}
+/* Vertical glow edge */
+.side-panel.left::before{
+  content:'';position:absolute;top:0;left:0;width:3px;bottom:0;
+  background:linear-gradient(180deg,#0050FF,#00CFFF 50%,#0050FF);
+  box-shadow:0 0 12px rgba(0,100,255,0.7);
+  animation:edgeGlowL 2.5s ease-in-out infinite alternate;
+}
+@keyframes edgeGlowL{
+  0%{box-shadow:0 0 8px rgba(0,100,255,0.6);}
+  100%{box-shadow:0 0 22px rgba(0,200,255,1),0 0 45px rgba(0,100,255,0.3);}
+}
+.side-panel.right::after{
+  content:'';position:absolute;top:0;right:0;width:3px;bottom:0;
+  background:linear-gradient(180deg,#E8001D,#FF6B00 50%,#E8001D);
+  box-shadow:0 0 12px rgba(232,0,29,0.7);
+  animation:edgeGlowR 2.5s ease-in-out infinite alternate;
+}
+@keyframes edgeGlowR{
+  0%{box-shadow:0 0 8px rgba(232,0,29,0.6);}
+  100%{box-shadow:0 0 22px rgba(255,80,30,1),0 0 45px rgba(232,0,29,0.3);}
+}
+
+/* ── Player Card ── */
+.pcard{
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  padding:10px 10px 6px;position:relative;overflow:hidden;
+  border-bottom:1px solid rgba(255,255,255,0.05);
+}
+.pcard:last-child{border-bottom:none;}
+
+/* Glassy card bg glow */
+.pcard.bat-card{background:linear-gradient(180deg,rgba(0,60,150,0.1),transparent);}
+.pcard.bowl-card{background:linear-gradient(180deg,rgba(100,0,30,0.1),transparent);}
+
+/* ── Strike indicator dot ── */
+.strike-dot{
+  position:absolute;top:8px;right:8px;z-index:10;
+  width:13px;height:13px;border-radius:50%;
+  background:var(--green);
+  box-shadow:0 0 8px var(--green),0 0 16px rgba(0,230,118,0.5);
+  animation:sDotPulse 1s ease-in-out infinite;
+}
+.strike-dot.off{background:rgba(255,255,255,0.15);box-shadow:none;animation:none;}
+@keyframes sDotPulse{50%{transform:scale(1.45);opacity:0.7;}}
+
+/* ── Role tag ── */
+.role-tag{
+  font-family:'Orbitron',sans-serif;font-size:8px;font-weight:900;
+  letter-spacing:2.5px;padding:2px 12px;border-radius:20px;
+  margin-bottom:6px;text-transform:uppercase;flex-shrink:0;
+}
+.rt-bat {background:linear-gradient(90deg,#FF6B00,#FFD700);color:#000;}
+.rt-bowl{background:linear-gradient(90deg,#7C3AED,#00CFFF);color:#fff;}
+.rt-info{background:linear-gradient(90deg,#1E3A8A,#0050FF);color:#fff;}
+
+/* ── Photo ── */
+.p-photo-outer{
+  position:relative;width:108px;height:130px;margin-bottom:5px;flex-shrink:0;
+}
+/* Spinning glow border */
+.p-spin-ring{
+  position:absolute;inset:-3px;border-radius:10px;
+  animation:photoRingSpin 4s linear infinite;z-index:0;
+}
+.bat-spin{background:conic-gradient(from 0deg,#FFD700 0%,#FF6B00 35%,transparent 55%,#FFD700 100%);}
+.bowl-spin{background:conic-gradient(from 0deg,#00CFFF 0%,#7C3AED 35%,transparent 55%,#00CFFF 100%);}
+@keyframes photoRingSpin{to{transform:rotate(360deg);}}
+.p-photo-inner{
+  position:absolute;inset:3px;border-radius:8px;overflow:hidden;
+  background:#040d20;z-index:1;
+}
+.p-photo-inner img{
+  width:100%;height:100%;object-fit:cover;object-position:top center;border-radius:8px;
+}
+.p-photo-inner .p-ph{
+  width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+  font-size:44px;
+}
+/* Ground shadow */
+.p-ground-shadow{
+  position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);z-index:2;
+  width:72px;height:12px;
+  background:radial-gradient(ellipse,rgba(0,0,0,0.55),transparent 70%);
+  border-radius:50%;filter:blur(3px);
+}
+
+/* ── Player text ── */
+.p-name{
+  font-family:'Orbitron',sans-serif;font-size:10px;font-weight:700;
+  text-align:center;color:#fff;text-transform:uppercase;letter-spacing:1px;
+  line-height:1.2;margin-bottom:2px;
+  text-shadow:0 1px 5px rgba(0,0,0,0.9);
+}
+.p-bignum{
+  font-family:'Bebas Neue';font-size:36px;line-height:1;text-align:center;
+}
+.p-bignum.bat {color:var(--gold);text-shadow:0 0 14px rgba(255,215,0,0.4);}
+.p-bignum.bowl{color:#93C5FD;text-shadow:0 0 14px rgba(0,200,255,0.4);}
+
+.p-stats-row{
+  display:flex;gap:6px;justify-content:center;width:100%;
+  background:rgba(0,0,0,0.32);border-radius:6px;padding:3px 5px;margin-top:2px;
+}
+.ps{display:flex;flex-direction:column;align-items:center;min-width:30px;}
+.ps-l{font-size:8px;color:rgba(255,215,0,0.65);font-weight:700;letter-spacing:1px;font-family:'Teko',sans-serif;}
+.ps-v{font-family:'Bebas Neue';font-size:22px;line-height:1;color:#fff;}
+.ps-l.b{color:rgba(0,200,255,0.65);}
+
+/* ── Match info card (lower half of right panel) ── */
+.info-card{
+  padding:8px 10px;display:flex;flex-direction:column;gap:5px;
+}
+.info-block{
+  background:rgba(0,0,0,0.35);border-radius:7px;padding:5px 8px;
+  border-left:2px solid rgba(255,107,0,0.4);
+}
+.ib-lbl{font-family:'Teko',sans-serif;font-size:11px;color:rgba(255,255,255,0.4);letter-spacing:1.5px;}
+.ib-val{font-family:'Bebas Neue';font-size:22px;line-height:1;color:var(--gold);}
+.ib-val.sm{font-family:'Rajdhani',sans-serif;font-size:13px;font-weight:700;color:#FCA5A5;line-height:1.25;}
+.ib-val.blue{color:#93C5FD;}
+.ib-val.green{color:var(--green);}
+.ib-val.orange{color:var(--orange);}
+
+/* ═══════════════════════════════════════════
+   OVER BAR — bottom, between panels
+═══════════════════════════════════════════ */
+.over-bar{
+  position:absolute;bottom:6px;left:246px;right:246px;
+  height:40px;z-index:40;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  background:rgba(2,5,16,0.90);
+  border:1px solid rgba(255,107,0,0.28);border-radius:10px;
+  backdrop-filter:blur(10px);
+  box-shadow:0 0 28px rgba(0,0,0,0.6),0 1px 0 rgba(255,255,255,0.04) inset;
+}
+.ov-label{
+  font-family:'Orbitron',sans-serif;font-size:10px;
+  color:var(--orange);letter-spacing:1.5px;
+}
+.ov-balls{display:flex;gap:5px;align-items:center;}
+.ob{
+  width:27px;height:27px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Bebas Neue';font-size:13px;
+  transition:all .35s ease;
+}
+.ob-dot{background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.2);border:1.5px solid rgba(255,255,255,0.1);}
+.ob-0  {background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.4);border:1.5px solid rgba(255,255,255,0.15);}
+.ob-1,.ob-2,.ob-3{background:linear-gradient(135deg,#1B5E20,#2E7D32);color:#fff;border:1.5px solid #4CAF50;}
+.ob-4  {background:linear-gradient(135deg,#E65100,#F57C00);color:#fff;border:1.5px solid var(--gold);box-shadow:0 0 9px rgba(255,109,0,0.6);}
+.ob-6  {background:linear-gradient(135deg,#7B0000,#C62828);color:#fff;border:1.5px solid #EF5350;box-shadow:0 0 12px rgba(198,40,40,0.8);}
+.ob-W  {background:linear-gradient(135deg,#6A0036,#AD1457);color:#fff;border:1.5px solid #E91E63;box-shadow:0 0 12px rgba(173,20,87,0.8);}
+.ob-WD,.ob-NB{background:linear-gradient(135deg,#311B92,#6A1FC2);color:#fff;border:1.5px solid #9C27B0;}
+.ov-tot{font-family:'Bebas Neue';font-size:19px;color:var(--gold);}
+</style>
+</head>
+<body>
+<div class="root">
+<div class="bg-field"></div>
+<canvas id="atmCanvas" width="1280" height="720"></canvas>
+
+<!-- ═══ GROUND SVG ═══ -->
+<div class="ground-wrap">
+<svg id="gSvg" viewBox="0 0 800 620" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <radialGradient id="ofG" cx="50%" cy="45%" r="52%">
+      <stop offset="0%"   stop-color="#2E7D32"/>
+      <stop offset="50%"  stop-color="#1B5E20"/>
+      <stop offset="100%" stop-color="#0a2a08"/>
+    </radialGradient>
+    <radialGradient id="ifG" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#357A3B"/>
+      <stop offset="100%" stop-color="#1E6624"/>
+    </radialGradient>
+    <linearGradient id="ptG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#C8A04A"/>
+      <stop offset="45%"  stop-color="#B48C38"/>
+      <stop offset="100%" stop-color="#9A762C"/>
+    </linearGradient>
+    <filter id="sf"><feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="rgba(0,0,0,0.7)"/></filter>
+  </defs>
+
+  <!-- Outfield -->
+  <ellipse cx="400" cy="312" rx="394" ry="300" fill="url(#ofG)"/>
+  <!-- Mowing stripes (alternating) -->
+  <ellipse cx="400" cy="312" rx="394" ry="300" fill="none" stroke="rgba(0,0,0,0.08)"  stroke-width="24"/>
+  <ellipse cx="400" cy="312" rx="364" ry="274" fill="none" stroke="rgba(255,255,255,0.025)" stroke-width="24"/>
+  <ellipse cx="400" cy="312" rx="334" ry="248" fill="none" stroke="rgba(0,0,0,0.08)"  stroke-width="24"/>
+  <ellipse cx="400" cy="312" rx="304" ry="222" fill="none" stroke="rgba(255,255,255,0.025)" stroke-width="24"/>
+  <!-- 30-yard circle -->
+  <ellipse cx="400" cy="312" rx="228" ry="190" fill="url(#ifG)"
+    stroke="rgba(255,255,255,0.58)" stroke-width="2.5" stroke-dasharray="10,7"/>
+  <!-- Boundary rope -->
+  <ellipse cx="400" cy="312" rx="392" ry="298" fill="none" stroke="rgba(255,255,255,0.78)" stroke-width="4"/>
+  <ellipse cx="400" cy="312" rx="392" ry="298" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="8" stroke-dasharray="5,16"/>
+
+  <!-- Pitch -->
+  <rect x="376" y="206" width="48" height="208" rx="3" fill="url(#ptG)" filter="url(#sf)"/>
+  <!-- Pitch grain lines -->
+  <line x1="376" y1="230" x2="424" y2="230" stroke="rgba(0,0,0,0.16)" stroke-width="1.2"/>
+  <line x1="376" y1="254" x2="424" y2="254" stroke="rgba(0,0,0,0.16)" stroke-width="1.2"/>
+  <line x1="376" y1="278" x2="424" y2="278" stroke="rgba(0,0,0,0.16)" stroke-width="1.2"/>
+  <line x1="376" y1="302" x2="424" y2="302" stroke="rgba(0,0,0,0.16)" stroke-width="1.2"/>
+  <line x1="376" y1="326" x2="424" y2="326" stroke="rgba(0,0,0,0.16)" stroke-width="1.2"/>
+  <line x1="376" y1="350" x2="424" y2="350" stroke="rgba(0,0,0,0.16)" stroke-width="1.2"/>
+  <line x1="376" y1="374" x2="424" y2="374" stroke="rgba(0,0,0,0.16)" stroke-width="1.2"/>
+
+  <!-- Bowling crease — TOP (bowling end) -->
+  <line x1="363" y1="220" x2="437" y2="220" stroke="white" stroke-width="2.8" opacity=".93"/>
+  <!-- Popping crease — TOP -->
+  <line x1="352" y1="233" x2="448" y2="233" stroke="white" stroke-width="2.2" opacity=".88"/>
+  <!-- Return creases TOP -->
+  <line x1="377" y1="220" x2="377" y2="233" stroke="white" stroke-width="2" opacity=".88"/>
+  <line x1="423" y1="220" x2="423" y2="233" stroke="white" stroke-width="2" opacity=".88"/>
+  <!-- Stumps TOP (3 stumps) -->
+  <rect x="392" y="209" width="4" height="14" rx="1.5" fill="#FFFFF0" opacity=".96"/>
+  <rect x="398" y="209" width="4" height="14" rx="1.5" fill="#FFFFF0" opacity=".96"/>
+  <rect x="404" y="209" width="4" height="14" rx="1.5" fill="#FFFFF0" opacity=".96"/>
+  <!-- Bail TOP -->
+  <line x1="392" y1="210" x2="408" y2="210" stroke="#FFE57F" stroke-width="2.5" opacity=".85"/>
+
+  <!-- Bowling crease — BOTTOM (batting end) -->
+  <line x1="363" y1="400" x2="437" y2="400" stroke="white" stroke-width="2.8" opacity=".93"/>
+  <!-- Popping crease — BOTTOM -->
+  <line x1="352" y1="387" x2="448" y2="387" stroke="white" stroke-width="2.2" opacity=".88"/>
+  <!-- Return creases BOTTOM -->
+  <line x1="377" y1="387" x2="377" y2="400" stroke="white" stroke-width="2" opacity=".88"/>
+  <line x1="423" y1="387" x2="423" y2="400" stroke="white" stroke-width="2" opacity=".88"/>
+  <!-- Stumps BOTTOM -->
+  <rect x="392" y="400" width="4" height="14" rx="1.5" fill="#FFFFF0" opacity=".96"/>
+  <rect x="398" y="400" width="4" height="14" rx="1.5" fill="#FFFFF0" opacity=".96"/>
+  <rect x="404" y="400" width="4" height="14" rx="1.5" fill="#FFFFF0" opacity=".96"/>
+  <!-- Bail BOTTOM -->
+  <line x1="392" y1="413" x2="408" y2="413" stroke="#FFE57F" stroke-width="2.5" opacity=".85"/>
+</svg>
+</div>
+
+<!-- ═══ FIELD LAYER ═══ -->
+<div id="fieldLayer"></div>
+
+<!-- ═══ SPECIAL EFFECTS ═══ -->
+<canvas id="fxCanvas" width="1280" height="720"></canvas>
+<div id="fxBanner"></div>
+
+<!-- ═══ TOP BAR ═══ -->
+<div class="top-bar">
+  <!-- Left team -->
+  <div class="team-side left">
+    <div class="flag-wrap">
+      <div class="flag-ring blue"></div>
+      <div class="flag-inner" id="flag1">🏏</div>
+    </div>
+    <div class="t-info">
+      <div class="t-name left"  id="tname1">TEAM 1</div>
+      <div class="t-score"      id="tscore1">—</div>
+      <div class="t-overs"      id="tovers1"></div>
+    </div>
+  </div>
+
+  <!-- Last Over panel (left of center) -->
+  <div class="top-over-panel last-over">
+    <div class="top-ov-lbl">LAST OV</div>
+    <div class="top-ov-balls" id="topLastBalls"></div>
+    <div class="top-ov-run">= <span id="topLastTot">0</span></div>
+  </div>
+
+  <!-- Center -->
+  <div class="center-panel">
+    <div class="live-pill pill-live" id="sbadge">LIVE</div>
+    <div class="c-crr">CRR <span id="sCRR">—</span></div>
+    <div class="c-fmt" id="sFmt">ODI</div>
+    <div class="c-time" id="cTime"></div>
+  </div>
+
+  <!-- Current Over panel (right of center) -->
+  <div class="top-over-panel curr-over">
+    <div class="top-ov-lbl">THIS OV</div>
+    <div class="top-ov-balls" id="topCurrBalls"></div>
+    <div class="top-ov-run">= <span id="topCurrTot">0</span></div>
+  </div>
+
+  <!-- Right team -->
+  <div class="team-side right">
+    <div class="flag-wrap">
+      <div class="flag-ring red"></div>
+      <div class="flag-inner" id="flag2">🏏</div>
+    </div>
+    <div class="t-info right">
+      <div class="t-name right" id="tname2">TEAM 2</div>
+      <div class="t-score"      id="tscore2">—</div>
+      <div class="t-overs"      id="tovers2"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ LEFT PANEL — Batsmen ═══ -->
+<div class="side-panel left">
+
+  <!-- Batsman 1 (striker) -->
+  <div class="pcard bat-card" id="bat1card">
+    <div class="strike-dot" id="sd1"></div>
+    <div class="role-tag rt-bat">⚡ STRIKER</div>
+    <div class="p-photo-outer">
+      <div class="p-spin-ring bat-spin"></div>
+      <div class="p-photo-inner" id="bat1ph"><div class="p-ph">🏏</div></div>
+      <div class="p-ground-shadow"></div>
+    </div>
+    <div class="p-name" id="bat1nm">BATSMAN 1</div>
+    <div class="p-bignum bat" id="bat1sc">0(0)</div>
+    <div class="p-stats-row">
+      <div class="ps"><div class="ps-l">4S</div><div class="ps-v" id="bat1f">0</div></div>
+      <div class="ps"><div class="ps-l">6S</div><div class="ps-v" id="bat1s">0</div></div>
+      <div class="ps"><div class="ps-l">SR</div><div class="ps-v" id="bat1sr">—</div></div>
+    </div>
+  </div>
+
+  <!-- Batsman 2 (non-striker) -->
+  <div class="pcard bat-card" id="bat2card">
+    <div class="strike-dot off" id="sd2"></div>
+    <div class="role-tag rt-bat" style="background:linear-gradient(90deg,#78350F,#B45309);color:#fff;">NON-STRIKE</div>
+    <div class="p-photo-outer">
+      <div class="p-spin-ring bat-spin" style="animation-direction:reverse;"></div>
+      <div class="p-photo-inner" id="bat2ph"><div class="p-ph">🏏</div></div>
+      <div class="p-ground-shadow"></div>
+    </div>
+    <div class="p-name" id="bat2nm">BATSMAN 2</div>
+    <div class="p-bignum bat" id="bat2sc">0(0)</div>
+    <div class="p-stats-row">
+      <div class="ps"><div class="ps-l">4S</div><div class="ps-v" id="bat2f">0</div></div>
+      <div class="ps"><div class="ps-l">6S</div><div class="ps-v" id="bat2s">0</div></div>
+      <div class="ps"><div class="ps-l">SR</div><div class="ps-v" id="bat2sr">—</div></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══ RIGHT PANEL — Bowler + Match Info ═══ -->
+<div class="side-panel right">
+
+  <!-- Bowler -->
+  <div class="pcard bowl-card" style="flex:0 0 52%;">
+    <div class="role-tag rt-bowl">🎳 BOWLER</div>
+    <div class="p-photo-outer">
+      <div class="p-spin-ring bowl-spin"></div>
+      <div class="p-photo-inner" id="bowlph"><div class="p-ph">🎳</div></div>
+      <div class="p-ground-shadow"></div>
+    </div>
+    <div class="p-name" id="bowlnm">BOWLER</div>
+    <div class="p-bignum bowl" id="bowlsc">0-0(0)</div>
+    <div class="p-stats-row">
+      <div class="ps"><div class="ps-l b">OV</div><div class="ps-v" id="bowlov">0</div></div>
+      <div class="ps"><div class="ps-l b">MN</div><div class="ps-v" id="bowlmn">0</div></div>
+      <div class="ps"><div class="ps-l b">ECO</div><div class="ps-v" id="bowleco">—</div></div>
+    </div>
+  </div>
+
+  <!-- Match info blocks -->
+  <div class="info-card" style="flex:1;">
+    <div class="info-block">
+      <div class="ib-lbl">PARTNERSHIP</div>
+      <div class="ib-val green" id="iPship">—</div>
+    </div>
+    <div class="info-block" style="border-left-color:rgba(255,0,40,0.4);">
+      <div class="ib-lbl">LAST WICKET</div>
+      <div class="ib-val sm" id="iLW">—</div>
+    </div>
+    <div class="info-block" style="border-left-color:rgba(0,150,255,0.4);">
+      <div class="ib-lbl">TARGET / NEED</div>
+      <div class="ib-val blue" id="iTgt">—</div>
+    </div>
+    <div class="info-block" style="border-left-color:rgba(255,165,0,0.4);">
+      <div class="ib-lbl">REQ RUN RATE</div>
+      <div class="ib-val orange" id="iRRR">—</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══ OVER BAR ═══ -->
+<div class="over-bar">
+  <span class="ov-label" id="ovLbl">OVER 1</span>
+  <div class="ov-balls" id="ovBalls"></div>
+  <span class="ov-tot">= <span id="ovTot">0</span></span>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// ATMOSPHERE CANVAS — crowd + stadium lights + scanlines
+// ═══════════════════════════════════════════════════════════════
+(function(){
+  const c = document.getElementById('atmCanvas');
+  const ctx = c.getContext('2d');
+  // Ground centre (accounting for side panels + top bar)
+  // Usable area: x 240→1040 (w=800), y 100→720 (h=620)
+  const GCX = 640, GCY = 410;
+
+  // Generate crowd spectators in a ring
+  const crowd = [];
+  for(let i = 0; i < 2400; i++){
+    const a = Math.random() * Math.PI * 2;
+    const ri = 0.75 + Math.random() * 0.22;
+    const rx = 305 * ri * (1 + 0.18 * Math.abs(Math.cos(a)));
+    const ry = 232 * ri * (1 + 0.08 * Math.abs(Math.sin(a)));
+    const hue = Math.random() < 0.55
+      ? (Math.random() * 45 + 3)      // warm — shirts & jerseys
+      : (Math.random() * 200 + 150);  // cool — more variety
+    crowd.push({
+      x: GCX + rx * Math.cos(a),
+      y: GCY + ry * Math.sin(a),
+      r: 1.4 + Math.random() * 2.4,
+      h: hue,
+      s: 55 + Math.random() * 35,
+      l: 20 + Math.random() * 32,
+      ph: Math.random() * Math.PI * 2,
+      sp: 0.012 + Math.random() * 0.038,
+    });
+  }
+
+  const LIGHTS = [[80,110],[1200,110],[80,700],[1200,700]];
+  let t = 0;
+
+  function draw(){
+    ctx.clearRect(0,0,1280,720);
+
+    // Dark vignette outside oval
+    const vg = ctx.createRadialGradient(GCX,GCY,150,GCX,GCY,680);
+    vg.addColorStop(0,'rgba(0,0,0,0)');
+    vg.addColorStop(.36,'rgba(0,0,0,0)');
+    vg.addColorStop(.43,`rgba(12,6,2,${0.55+0.08*Math.sin(t*0.01)})`);
+    vg.addColorStop(.68,'rgba(6,3,1,0.88)');
+    vg.addColorStop(1,'rgba(1,0,0,0.97)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,1280,720);
+
+    // Crowd dots
+    crowd.forEach(p=>{
+      p.ph += p.sp;
+      const al = 0.42 + 0.32*Math.sin(p.ph);
+      const rr = p.r * (1 + 0.18*Math.sin(p.ph * 1.6));
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rr, 0, Math.PI*2);
+      ctx.fillStyle=`hsla(${p.h},${p.s}%,${p.l}%,${al})`;
+      ctx.fill();
+    });
+
+    // Stadium floodlights
+    LIGHTS.forEach(([lx,ly])=>{
+      const g = ctx.createRadialGradient(lx,ly,3,lx,ly,340);
+      g.addColorStop(0,`rgba(255,248,210,${0.08+0.025*Math.sin(t*0.017)})`);
+      g.addColorStop(.25,`rgba(255,245,200,${0.03+0.01*Math.sin(t*0.017)})`);
+      g.addColorStop(1,'rgba(255,245,200,0)');
+      ctx.fillStyle=g;
+      ctx.beginPath(); ctx.arc(lx,ly,340,0,Math.PI*2); ctx.fill();
+    });
+
+    // Subtle scanlines
+    ctx.globalAlpha = 0.018 + 0.008*Math.sin(t*0.006);
+    for(let y=100;y<720;y+=4){
+      ctx.fillStyle='rgba(0,0,20,0.6)';
+      ctx.fillRect(0,y,1280,1.5);
+    }
+    ctx.globalAlpha=1;
+    t++;
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ═══════════════════════════════════════════════════════════════
+// FIELD POSITIONS  (absolute pixels on 1280×720 canvas)
+// Ground centre: x≈640, y≈410
+// Ground radii: rx≈300, ry≈228
+// ═══════════════════════════════════════════════════════════════
+const GCX=640, GCY=410, GRX=295, GRY=225;
+
+const FIELD_POS = [
+  // ── BATTING END (bottom wicket stumps at y≈407 in SVG → ~GCY+65 in pixels) ──
+  // Strike batter: IN FRONT of bottom stumps = above the stumps (smaller y = higher up = facing bowler)
+  { id:'bat1',  x:GCX,    y:GCY+42,  sz:'sz-bat',   anim:'anim-bat'  },
+  // Wicket keeper: BEHIND bottom stumps (below = larger y)
+  { id:'wk',    x:GCX,    y:GCY+108, sz:'sz-wk',    anim:'anim-wk'   },
+  // Leg umpire: square leg near batting end
+  { id:'ump1',  x:GCX-82, y:GCY+48,  sz:'sz-ump',   anim:''          },
+
+  // ── BOWLING END (top wicket stumps at y≈212 in SVG → ~GCY-88 in pixels) ──
+  // Non-strike batter: IN FRONT of top stumps = below the stumps (larger y = lower = facing bowler side)
+  { id:'bat2',  x:GCX+24, y:GCY-60,  sz:'sz-bat',   anim:'anim-bat'  },
+  // Bowler: running in from BEHIND top stumps (further up = smaller y)
+  { id:'bowl',  x:GCX,    y:GCY-118, sz:'sz-bowl',  anim:'anim-bowl' },
+  // On-field umpire: behind bowling end stumps
+  { id:'ump2',  x:GCX-4,  y:GCY-162, sz:'sz-ump',   anim:''          },
+
+  // 8 fielders in ring
+  { id:'f1',    x:GCX-256, y:GCY-28,  sz:'sz-field', anim:'' },
+  { id:'f2',    x:GCX+256, y:GCY-28,  sz:'sz-field', anim:'' },
+  { id:'f3',    x:GCX-272, y:GCY+95,  sz:'sz-field', anim:'' },
+  { id:'f4',    x:GCX+272, y:GCY+95,  sz:'sz-field', anim:'' },
+  { id:'f5',    x:GCX-185, y:GCY-182, sz:'sz-field', anim:'' },
+  { id:'f6',    x:GCX+185, y:GCY-182, sz:'sz-field', anim:'' },
+  { id:'f7',    x:GCX-140, y:GCY+186, sz:'sz-field', anim:'' },
+  { id:'f8',    x:GCX+140, y:GCY+186, sz:'sz-field', anim:'' },
+];
+
+function shortName(n){
+  if(!n) return '';
+  n=n.trim();
+  const p=n.split(' ');
+  if(p.length===1) return p[0].substring(0,9).toUpperCase();
+  return (p[0][0]+'. '+p[p.length-1]).substring(0,12).toUpperCase();
+}
+
+function getEmoji(id){
+  if(id.startsWith('bat'))  return '<span class="tok-emoji">🏏</span>';
+  if(id.startsWith('bowl')) return '<span class="tok-emoji">🎳</span>';
+  if(id.startsWith('wk'))   return '<span class="tok-emoji">🧤</span>';
+  if(id.startsWith('ump'))  return '<span class="tok-emoji">🕴</span>';
+  return '<span class="tok-emoji">🟢</span>';
+}
+
+function buildToken(pos, label, photoUrl, extraCls){
+  const d=document.createElement('div');
+  d.className=`ftok ${pos.sz||''} ${pos.anim||''} ${extraCls||''}`;
+  d.id=`ft_${pos.id}`;
+  d.style.cssText=`left:${pos.x}px;top:${pos.y}px;`;
+
+  const ring=document.createElement('div');
+  ring.className='tok-ring';
+  if(photoUrl && photoUrl.startsWith('http')){
+    const img=document.createElement('img');
+    img.src=photoUrl; img.alt=label;
+    img.onerror=()=>{ ring.innerHTML=getEmoji(pos.id); };
+    ring.appendChild(img);
+  } else {
+    ring.innerHTML=getEmoji(pos.id);
+  }
+
+  const gnd=document.createElement('div'); gnd.className='tok-gnd';
+  const lbl=document.createElement('div'); lbl.className='tok-lbl'; lbl.textContent=label||'';
+
+  d.appendChild(ring); d.appendChild(gnd);
+  if(label) d.appendChild(lbl);
+  return d;
+}
+
+function renderField(d){
+  const wrap=document.getElementById('fieldLayer');
+  wrap.innerHTML='';
+
+  const bat1=d.batsman1||{}, bat2=d.batsman2||{}, bowl=d.bowler||{};
+  const xi2=d.playing_xi_team2||[];
+
+  // WK from bowling team XI
+  const wk=xi2.find(p=>(p.role||'').toUpperCase()==='WK')||{};
+  // Fielders = bowling team minus bowler
+  const bLast=(bowl.name||'').toLowerCase().split(' ').pop()||'__none__';
+  const fielders=xi2.filter(p=>{
+    const ln=(p.name||'').toLowerCase().split(' ').pop();
+    return ln!==bLast;
+  }).slice(0,8);
+
+  FIELD_POS.forEach(pos=>{
+    let photo='', label='', extra='';
+    if(pos.id==='bat1'){
+      photo=bat1.photo||''; label=shortName(bat1.name||''); extra='on-strike';
+    } else if(pos.id==='bat2'){
+      photo=bat2.photo||''; label=shortName(bat2.name||'');
+    } else if(pos.id==='bowl'){
+      photo=bowl.photo||''; label=shortName(bowl.name||'');
+    } else if(pos.id==='wk'){
+      photo=wk.photo||''; label='WK';
+    } else if(pos.id.startsWith('ump')){
+      label='UMP';
+    } else {
+      const fi=parseInt(pos.id.replace('f',''))-1;
+      const f=fielders[fi]||{};
+      photo=f.photo||''; label=shortName(f.name||'');
+    }
+    wrap.appendChild(buildToken(pos, label, photo, extra));
+  });
+}
+
+function updateTokPhoto(id, url){
+  const tok=document.getElementById('ft_'+id); if(!tok) return;
+  const ring=tok.querySelector('.tok-ring'); if(!ring) return;
+  if(!url||!url.startsWith('http')) return;
+  const ex=ring.querySelector('img');
+  if(ex&&ex.src===url) return;
+  const img=document.createElement('img');
+  img.src=url;
+  img.onerror=()=>{ ring.innerHTML=getEmoji(id); };
+  ring.innerHTML=''; ring.appendChild(img);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STRIKE SWAP LOGIC
+// scraper_core puts batsmanStriker as batsman1 ALWAYS
+// So we just always mark bat1 as striker.
+// But we also detect if names swapped to animate the swap.
+// ═══════════════════════════════════════════════════════════════
+let _prevBat1='', _prevBat2='';
+
+function applyStrike(b1name, b2name){
+  const sd1=document.getElementById('sd1');
+  const sd2=document.getElementById('sd2');
+  const t1=document.getElementById('ft_bat1');
+  const t2=document.getElementById('ft_bat2');
+
+  // bat1 is always striker in scraper_core
+  if(sd1){ sd1.classList.remove('off'); }
+  if(sd2){ sd2.classList.add('off'); }
+  if(t1){ t1.classList.add('on-strike'); }
+  if(t2){ t2.classList.remove('on-strike'); }
+
+  // Role labels
+  const rc1=document.getElementById('bat1card');
+  const rc2=document.getElementById('bat2card');
+  if(rc1){ const rt=rc1.querySelector('.role-tag'); if(rt){ rt.textContent='⚡ STRIKER'; rt.style.background='linear-gradient(90deg,#FF6B00,#FFD700)'; rt.style.color='#000'; }}
+  if(rc2){ const rt=rc2.querySelector('.role-tag'); if(rt){ rt.textContent='NON-STRIKE'; rt.style.background='linear-gradient(90deg,#78350F,#B45309)'; rt.style.color='#fff'; }}
+
+  _prevBat1=b1name; _prevBat2=b2name;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════════════════
+function st(id,v){ const e=document.getElementById(id); if(e&&e.textContent!==String(v)) e.textContent=String(v); }
+
+function setPhoto(wid, url, fb){
+  const w=document.getElementById(wid); if(!w) return;
+  const ex=w.querySelector('img');
+  if(url&&url.startsWith('http')){
+    if(ex&&ex.src===url) return;
+    w.innerHTML=`<img src="${url}" style="width:100%;height:100%;object-fit:cover;object-position:top center;border-radius:7px;" onerror="this.parentNode.innerHTML='<div class=p-ph>${fb}</div>'">`;
+  } else { w.innerHTML=`<div class="p-ph">${fb}</div>`; }
+}
+
+function setFlag(id, url){
+  const el=document.getElementById(id); if(!el) return;
+  if(url&&url.startsWith('http')){
+    const ex=el.querySelector('img');
+    if(ex&&ex.src===url) return;
+    el.innerHTML=`<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentNode.textContent='🏏'">`;
+  } else { el.textContent='🏏'; }
+}
+
+function renderBalls(balls){
+  const c=document.getElementById('ovBalls'); if(!c) return;
+  c.innerHTML='';
+  (balls||[]).forEach(b=>{
+    const s=String(b).trim().toUpperCase();
+    const div=document.createElement('div');
+    let cl='ob ';
+    if(s==='W') cl+='ob-W';
+    else if(s==='4') cl+='ob-4';
+    else if(s==='6') cl+='ob-6';
+    else if(s==='WD') cl+='ob-WD';
+    else if(s==='NB') cl+='ob-NB';
+    else if(['1','2','3'].includes(s)) cl+='ob-'+s;
+    else if(s==='0') cl+='ob-0';
+    else cl+='ob-dot';
+    div.className=cl; div.textContent=s||'·';
+    c.appendChild(div);
+  });
+}
+
+// ── Top bar ball-by-ball renderer ──
+function renderTopBalls(containerId, totId, balls){
+  const c=document.getElementById(containerId); if(!c) return;
+  c.innerHTML='';
+  (balls||[]).forEach(b=>{
+    const s=String(b).trim().toUpperCase();
+    const div=document.createElement('div');
+    let cl='tob ';
+    if(s==='W') cl+='tob-W';
+    else if(s==='4') cl+='tob-4';
+    else if(s==='6') cl+='tob-6';
+    else if(s==='WD') cl+='tob-WD';
+    else if(s==='NB') cl+='tob-NB';
+    else if(['1','2','3'].includes(s)) cl+='tob-'+s;
+    else if(s==='0') cl+='tob-0';
+    else cl+='tob-dot';
+    div.className=cl; div.textContent=s||'·';
+    c.appendChild(div);
+  });
+  const tot=balls.reduce((a,b)=>{const n=parseInt(b);return a+(isNaN(n)?0:n);},0);
+  const te=document.getElementById(totId); if(te) te.textContent=tot;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SPECIAL FX — Lightning / Fireworks for 4, 6, Wicket
+// ═══════════════════════════════════════════════════════════════
+(function(){
+  const canvas=document.getElementById('fxCanvas');
+  const ctx=canvas.getContext('2d');
+  const banner=document.getElementById('fxBanner');
+  let particles=[];
+  let lightningBolts=[];
+  let fxActive=false;
+  let fxTimer=0;
+
+  // ── Particle system ──
+  function spawnFirework(x, y, color1, color2, count){
+    for(let i=0;i<count;i++){
+      const angle=Math.random()*Math.PI*2;
+      const speed=3+Math.random()*8;
+      particles.push({
+        x,y,
+        vx:Math.cos(angle)*speed,
+        vy:Math.sin(angle)*speed,
+        life:1.0,
+        decay:0.012+Math.random()*0.018,
+        size:3+Math.random()*5,
+        color:Math.random()<0.5?color1:color2,
+        trail:[],
+      });
+    }
+  }
+
+  function spawnLightning(x1,y1,x2,y2,branches,color){
+    const bolt={pts:[],color,life:1.0,decay:0.06};
+    const steps=12+Math.floor(Math.random()*8);
+    let cx=x1,cy=y1;
+    bolt.pts.push([cx,cy]);
+    for(let i=1;i<=steps;i++){
+      const t=i/steps;
+      const ex=x1+(x2-x1)*t;
+      const ey=y1+(y2-y1)*t;
+      const offset=(Math.random()-0.5)*80*(1-t);
+      cx=ex+offset; cy=ey+(Math.random()-0.5)*30;
+      bolt.pts.push([cx,cy]);
+    }
+    bolt.pts.push([x2,y2]);
+    lightningBolts.push(bolt);
+    if(branches>0){
+      for(let b=0;b<2;b++){
+        const bi=Math.floor(Math.random()*(bolt.pts.length-2))+1;
+        const bp=bolt.pts[bi];
+        spawnLightning(bp[0],bp[1],
+          bp[0]+(Math.random()-0.5)*200,bp[1]+80+Math.random()*120,
+          0,color);
+      }
+    }
+  }
+
+  function triggerFX(type){
+    if(fxActive) return;
+    fxActive=true; fxTimer=0;
+    particles=[];lightningBolts=[];
+
+    const CX=640, CY=360;
+    const b=document.getElementById('fxBanner');
+    b.className=''; b.textContent='';
+
+    if(type==='4'){
+      // Orange fireworks + lightning
+      b.className='fx-show fx-4'; b.textContent='⚡ FOUR! ⚡';
+      for(let i=0;i<6;i++){
+        spawnFirework(CX+(Math.random()-0.5)*400, CY+(Math.random()-0.5)*200,
+          '#FFD700','#FF6B00',40);
+      }
+      for(let i=0;i<4;i++){
+        spawnLightning(Math.random()*1280,0,Math.random()*1280,720,2,'#FFD700');
+      }
+    } else if(type==='6'){
+      // Red/gold mega fireworks
+      b.className='fx-show fx-6'; b.textContent='💥 SIX! 💥';
+      for(let i=0;i<10;i++){
+        spawnFirework(CX+(Math.random()-0.5)*500, CY+(Math.random()-0.5)*300,
+          '#FF1744','#FFD700',60);
+      }
+      for(let i=0;i<7;i++){
+        spawnLightning(Math.random()*1280,0,Math.random()*1280,720,3,'#FF4444');
+        spawnLightning(Math.random()*1280,0,Math.random()*1280,720,2,'#FFD700');
+      }
+    } else if(type==='W'){
+      // Purple/pink dramatic
+      b.className='fx-show fx-W'; b.textContent='🎯 WICKET! 🎯';
+      for(let i=0;i<8;i++){
+        spawnFirework(CX+(Math.random()-0.5)*400, CY+(Math.random()-0.5)*200,
+          '#E91E63','#9C27B0',50);
+      }
+      for(let i=0;i<8;i++){
+        spawnLightning(Math.random()*1280,0,Math.random()*1280,720,3,'#E91E63');
+      }
+    }
+    requestAnimationFrame(fxDraw);
+  }
+
+  function fxDraw(){
+    ctx.clearRect(0,0,1280,720);
+    fxTimer++;
+
+    // Draw lightning
+    lightningBolts=lightningBolts.filter(bolt=>{
+      bolt.life-=bolt.decay;
+      if(bolt.life<=0) return false;
+      ctx.save();
+      ctx.globalAlpha=bolt.life*0.85;
+      ctx.strokeStyle=bolt.color;
+      ctx.lineWidth=2+bolt.life*3;
+      ctx.shadowColor=bolt.color;
+      ctx.shadowBlur=15*bolt.life;
+      ctx.beginPath();
+      bolt.pts.forEach(([x,y],i)=>i===0?ctx.moveTo(x,y):ctx.lineTo(x,y));
+      ctx.stroke();
+      // Glow pass
+      ctx.lineWidth=1;
+      ctx.globalAlpha=bolt.life*0.3;
+      ctx.shadowBlur=30;
+      ctx.stroke();
+      ctx.restore();
+      return true;
+    });
+
+    // Draw particles
+    particles=particles.filter(p=>{
+      p.life-=p.decay;
+      if(p.life<=0) return false;
+      p.vy+=0.18; // gravity
+      p.vx*=0.97;
+      p.vy*=0.97;
+      p.x+=p.vx; p.y+=p.vy;
+      p.trail.push([p.x,p.y]);
+      if(p.trail.length>6) p.trail.shift();
+      // Trail
+      ctx.save();
+      for(let i=1;i<p.trail.length;i++){
+        ctx.globalAlpha=(i/p.trail.length)*p.life*0.4;
+        ctx.fillStyle=p.color;
+        ctx.beginPath();
+        ctx.arc(p.trail[i][0],p.trail[i][1],p.size*0.5,0,Math.PI*2);
+        ctx.fill();
+      }
+      // Particle
+      ctx.globalAlpha=p.life;
+      ctx.fillStyle=p.color;
+      ctx.shadowColor=p.color;
+      ctx.shadowBlur=8;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,p.size,0,Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+      return true;
+    });
+
+    if(particles.length>0||lightningBolts.length>0){
+      requestAnimationFrame(fxDraw);
+    } else {
+      ctx.clearRect(0,0,1280,720);
+      fxActive=false;
+    }
+  }
+
+  // Expose globally
+  window.triggerFX=triggerFX;
+})();
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN DATA POLL — reads from /data/{matchId} (via app.py patch)
+// or local data.json for testing
+// ═══════════════════════════════════════════════════════════════
+let _xiKey='';
+let _prevLastBall='';
+
+async function poll(){
+  try{
+    const resp=await fetch('data.json?t='+Date.now());
+    if(!resp.ok) return;
+    const d=await resp.json();
+
+    const t1=d.team1||{}, t2=d.team2||{};
+
+    // Flags
+    setFlag('flag1', t1.flag_img||t1.flag_manual||'');
+    setFlag('flag2', t2.flag_img||t2.flag_manual||'');
+
+    // Scores
+    st('tname1', t1.name||'TEAM 1');
+    st('tname2', t2.name||'TEAM 2');
+    st('tscore1', t1.score||'—');
+    st('tscore2', t2.score||'—');
+    const ov1=/^\d{1,2}\.\d$/.test(String(t1.overs))?t1.overs+' OV':'';
+    const ov2=/^\d{1,2}\.\d$/.test(String(t2.overs))?t2.overs+' OV':'';
+    st('tovers1',ov1); st('tovers2',ov2);
+
+    // Centre
+    st('sCRR', d.crr||'—');
+    st('sFmt', d.match_format||'');
+    st('cTime', d.last_updated||'');
+    const sb=document.getElementById('sbadge');
+    if(sb){
+      const s=d.match_status||'LIVE';
+      sb.textContent=s;
+      sb.className='live-pill '+(
+        s.toLowerCase().includes('won')   ?'pill-win' :
+        s.toLowerCase().includes('live')  ?'pill-live':'pill-break');
+    }
+
+    // Over balls
+    const balls=d.last_over_balls||[];
+    renderBalls(balls);
+    renderTopBalls('topCurrBalls','topCurrTot', balls);
+    st('ovLbl','OVER '+(d.current_over||1));
+    st('ovTot',balls.reduce((a,b)=>{const n=parseInt(b);return a+(isNaN(n)?0:n);},0));
+
+    // Last over balls in top bar
+    const lastBalls=d.prev_over_balls||[];
+    renderTopBalls('topLastBalls','topLastTot', lastBalls);
+
+    // ── Special FX: detect new ball event ──
+    const lastBall=balls.length?String(balls[balls.length-1]).toUpperCase():'';
+    if(lastBall!==_prevLastBall){
+      _prevLastBall=lastBall;
+      if(lastBall==='6') window.triggerFX && window.triggerFX('6');
+      else if(lastBall==='4') window.triggerFX && window.triggerFX('4');
+      else if(lastBall==='W') window.triggerFX && window.triggerFX('W');
+    }
+
+    // Batsmen
+    const b1=d.batsman1||{}, b2=d.batsman2||{}, bw=d.bowler||{};
+    setPhoto('bat1ph', b1.photo||'', '🏏');
+    st('bat1nm', b1.name||'BATSMAN 1');
+    st('bat1sc', b1.runs!==undefined ? b1.runs+'('+b1.balls+')' : '—');
+    st('bat1f',b1.fours||0); st('bat1s',b1.sixes||0); st('bat1sr',b1.sr||'—');
+
+    setPhoto('bat2ph', b2.photo||'', '🏏');
+    st('bat2nm', b2.name||'BATSMAN 2');
+    st('bat2sc', b2.runs!==undefined ? b2.runs+'('+b2.balls+')' : '—');
+    st('bat2f',b2.fours||0); st('bat2s',b2.sixes||0); st('bat2sr',b2.sr||'—');
+
+    // Bowler
+    setPhoto('bowlph', bw.photo||'', '🎳');
+    st('bowlnm', bw.name||'BOWLER');
+    st('bowlsc', bw.wickets!==undefined ? bw.wickets+'-'+bw.runs+'('+bw.overs+')' : '—');
+    st('bowlov',bw.overs||'0'); st('bowlmn',bw.maidens||0); st('bowleco',bw.economy||'—');
+
+    // Match info
+    st('iPship', d.partnership||'—');
+    const lw=d.last_wicket||'—';
+    st('iLW', lw.length>32?lw.substring(0,30)+'…':lw);
+    st('iTgt', d.target?(d.need?'TGT '+d.target+' | NEED '+d.need:'TGT '+d.target):'—');
+    st('iRRR', d.rrr||'—');
+
+    // Strike indicator (bat1 is always striker)
+    applyStrike(b1.name||'', b2.name||'');
+
+    // Rebuild field tokens only if XI or players changed
+    const xk=JSON.stringify({xi2:d.playing_xi_team2||[],b1:b1.name,b2:b2.name,bw:bw.name});
+    if(xk!==_xiKey){ _xiKey=xk; renderField(d); }
+    else {
+      // Live photo update for crease players without full rebuild
+      updateTokPhoto('bat1', b1.photo||'');
+      updateTokPhoto('bat2', b2.photo||'');
+      updateTokPhoto('bowl', bw.photo||'');
+    }
+
+  } catch(e){ console.warn('poll', e); }
+}
+
+poll();
+setInterval(poll, 2500);
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     FIELD POSITION CONTROLLER — drag tokens to reposition
+═══════════════════════════════════════════════════════════════ -->
+<style>
+#posController{
+  position:fixed;bottom:16px;right:16px;z-index:9999;
+  background:linear-gradient(135deg,rgba(5,10,30,0.97),rgba(2,6,18,0.99));
+  border:1px solid rgba(255,215,0,0.35);border-radius:12px;
+  padding:10px 14px;min-width:220px;max-width:260px;
+  box-shadow:0 8px 40px rgba(0,0,0,0.8),0 0 0 1px rgba(255,255,255,0.04) inset;
+  font-family:'Rajdhani',sans-serif;color:#fff;
+  transition:opacity .3s;user-select:none;
+}
+#posController.hidden{opacity:0;pointer-events:none;}
+#posCtrlHeader{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:8px;border-bottom:1px solid rgba(255,215,0,0.2);padding-bottom:6px;
+}
+#posCtrlTitle{
+  font-family:'Orbitron',sans-serif;font-size:10px;font-weight:700;
+  color:var(--gold);letter-spacing:2px;
+}
+#posCtrlToggle{
+  font-size:10px;cursor:pointer;padding:2px 8px;border-radius:20px;
+  background:rgba(255,215,0,0.15);border:1px solid rgba(255,215,0,0.3);
+  color:var(--gold);letter-spacing:1px;
+}
+.pc-row{
+  display:flex;align-items:center;gap:6px;margin:4px 0;
+}
+.pc-lbl{
+  font-family:'Teko',sans-serif;font-size:13px;font-weight:600;
+  min-width:68px;color:rgba(255,255,255,0.8);letter-spacing:0.5px;
+}
+.pc-lbl.bat-lbl {color:#FFD700;}
+.pc-lbl.bowl-lbl{color:#00CFFF;}
+.pc-lbl.wk-lbl  {color:#C084FC;}
+.pc-lbl.ump-lbl {color:rgba(255,255,255,0.9);}
+.pc-lbl.f-lbl   {color:rgba(150,255,150,0.85);}
+.pc-btn{
+  padding:2px 7px;border-radius:5px;cursor:pointer;font-size:11px;font-family:'Teko';
+  border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.07);
+  color:#fff;transition:background .15s;
+}
+.pc-btn:hover{background:rgba(255,255,255,0.16);}
+.pc-btn.active{background:rgba(255,215,0,0.25);border-color:rgba(255,215,0,0.6);color:var(--gold);}
+.pc-coord{font-size:10px;color:rgba(255,255,255,0.35);min-width:72px;text-align:right;font-family:'Orbitron';}
+#pcResetAll{
+  margin-top:8px;width:100%;padding:5px;border-radius:7px;cursor:pointer;
+  background:linear-gradient(135deg,rgba(232,0,29,0.3),rgba(100,0,0,0.4));
+  border:1px solid rgba(232,0,29,0.4);color:#fff;font-family:'Orbitron';
+  font-size:9px;letter-spacing:2px;transition:background .2s;
+}
+#pcResetAll:hover{background:linear-gradient(135deg,rgba(232,0,29,0.55),rgba(100,0,0,0.65));}
+
+/* Make tokens draggable visual cue */
+.ftok.drag-enabled{cursor:grab !important;}
+.ftok.drag-enabled:active{cursor:grabbing !important;}
+.ftok.drag-active .tok-ring{
+  outline:2px dashed var(--gold) !important;
+  box-shadow:0 0 20px rgba(255,215,0,0.9) !important;
+}
+</style>
+
+<div id="posController">
+  <div id="posCtrlHeader">
+    <span id="posCtrlTitle">⚽ FIELD POSITIONS</span>
+    <span id="posCtrlToggle">HIDE</span>
+  </div>
+  <div id="pcRows"></div>
+  <div style="display:flex;gap:6px;margin-top:6px;">
+    <button id="pcDragToggle" class="pc-btn" style="flex:1;background:rgba(0,200,100,0.12);border-color:rgba(0,200,100,0.3);color:#00E676;font-size:11px;">🖐 DRAG MODE: OFF</button>
+  </div>
+  <button id="pcResetAll">↺ RESET ALL POSITIONS</button>
+</div>
+
+<button id="posCtrlShowBtn" style="
+  position:fixed;bottom:16px;right:16px;z-index:9999;display:none;
+  padding:6px 14px;border-radius:20px;cursor:pointer;
+  background:linear-gradient(135deg,rgba(255,215,0,0.25),rgba(255,107,0,0.25));
+  border:1px solid rgba(255,215,0,0.5);color:var(--gold);
+  font-family:'Orbitron';font-size:9px;letter-spacing:2px;
+  box-shadow:0 4px 20px rgba(0,0,0,0.6);
+">⚽ POSITIONS</button>
+
+<script>
+(function(){
+  // Default positions (mirrors FIELD_POS above)
+  const defaults = {
+    bat1:  {x:GCX,    y:GCY+42 },
+    wk:    {x:GCX,    y:GCY+108},
+    ump1:  {x:GCX-82, y:GCY+48 },
+    bat2:  {x:GCX+24, y:GCY-60 },
+    bowl:  {x:GCX,    y:GCY-118},
+    ump2:  {x:GCX-4,  y:GCY-162},
+    f1:    {x:GCX-256,y:GCY-28 },
+    f2:    {x:GCX+256,y:GCY-28 },
+    f3:    {x:GCX-272,y:GCY+95 },
+    f4:    {x:GCX+272,y:GCY+95 },
+    f5:    {x:GCX-185,y:GCY-182},
+    f6:    {x:GCX+185,y:GCY-182},
+    f7:    {x:GCX-140,y:GCY+186},
+    f8:    {x:GCX+140,y:GCY+186},
+  };
+
+  const overrides = {}; // live position overrides
+  let dragMode = false;
+  let dragging = null; // {id, offX, offY}
+
+  const labels = {
+    bat1:'⚡ STRIKER', bat2:'🏏 NON-STR', bowl:'🎳 BOWLER',
+    wk:'🧤 WK', ump1:'🕴 UMP1', ump2:'🕴 UMP2',
+    f1:'F1',f2:'F2',f3:'F3',f4:'F4',f5:'F5',f6:'F6',f7:'F7',f8:'F8',
+  };
+  const lblClass = {
+    bat1:'bat-lbl',bat2:'bat-lbl',bowl:'bowl-lbl',
+    wk:'wk-lbl',ump1:'ump-lbl',ump2:'ump-lbl',
+    f1:'f-lbl',f2:'f-lbl',f3:'f-lbl',f4:'f-lbl',f5:'f-lbl',f6:'f-lbl',f7:'f-lbl',f8:'f-lbl',
+  };
+
+  function getPos(id){
+    return overrides[id] || {...defaults[id]};
+  }
+
+  // Expose for renderField to use overrides
+  window.getPosOverride = getPos;
+
+  function moveToken(id, x, y){
+    overrides[id] = {x, y};
+    const el = document.getElementById('ft_'+id);
+    if(el){ el.style.left=x+'px'; el.style.top=y+'px'; }
+    updateCoord(id, x, y);
+  }
+
+  function updateCoord(id, x, y){
+    const coord = document.getElementById('pc_coord_'+id);
+    if(coord) coord.textContent = Math.round(x-GCX)+','+(Math.round(y-GCY));
+  }
+
+  // Build controller rows
+  function buildRows(){
+    const container = document.getElementById('pcRows');
+    container.innerHTML = '';
+    Object.keys(defaults).forEach(id => {
+      const pos = getPos(id);
+      const row = document.createElement('div');
+      row.className = 'pc-row';
+      row.innerHTML = `
+        <span class="pc-lbl ${lblClass[id]||''}">${labels[id]||id}</span>
+        <button class="pc-btn" onclick="pcMove('${id}',-10,0)">◀</button>
+        <button class="pc-btn" onclick="pcMove('${id}',10,0)">▶</button>
+        <button class="pc-btn" onclick="pcMove('${id}',0,-10)">▲</button>
+        <button class="pc-btn" onclick="pcMove('${id}',0,10)">▼</button>
+        <span class="pc-coord" id="pc_coord_${id}">${Math.round(pos.x-GCX)},${Math.round(pos.y-GCY)}</span>
+      `;
+      container.appendChild(row);
+    });
+  }
+
+  window.pcMove = function(id, dx, dy){
+    const p = getPos(id);
+    moveToken(id, p.x+dx, p.y+dy);
+  };
+
+  // ── Drag mode ──
+  function enableDrag(){
+    document.querySelectorAll('.ftok').forEach(el=>{
+      el.classList.add('drag-enabled');
+    });
+    document.addEventListener('mousedown', onDragStart);
+    document.addEventListener('mousemove', onDragMove);
+    document.addEventListener('mouseup',   onDragEnd);
+    document.addEventListener('touchstart', onTouchStart, {passive:false});
+    document.addEventListener('touchmove',  onTouchMove,  {passive:false});
+    document.addEventListener('touchend',   onTouchEnd);
+  }
+
+  function disableDrag(){
+    document.querySelectorAll('.ftok').forEach(el=>{
+      el.classList.remove('drag-enabled','drag-active');
+    });
+    document.removeEventListener('mousedown', onDragStart);
+    document.removeEventListener('mousemove', onDragMove);
+    document.removeEventListener('mouseup',   onDragEnd);
+    document.removeEventListener('touchstart', onTouchStart);
+    document.removeEventListener('touchmove',  onTouchMove);
+    document.removeEventListener('touchend',   onTouchEnd);
+  }
+
+  function getTokenId(el){
+    let node = el;
+    while(node && node !== document.body){
+      if(node.id && node.id.startsWith('ft_')) return node.id.replace('ft_','');
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function onDragStart(e){
+    const id = getTokenId(e.target);
+    if(!id) return;
+    const el = document.getElementById('ft_'+id);
+    if(!el) return;
+    const p = getPos(id);
+    dragging = {id, offX: e.clientX - p.x, offY: e.clientY - p.y};
+    el.classList.add('drag-active');
+    e.preventDefault();
+  }
+
+  function onDragMove(e){
+    if(!dragging) return;
+    const x = e.clientX - dragging.offX;
+    const y = e.clientY - dragging.offY;
+    moveToken(dragging.id, x, y);
+  }
+
+  function onDragEnd(){
+    if(!dragging) return;
+    const el = document.getElementById('ft_'+dragging.id);
+    if(el) el.classList.remove('drag-active');
+    dragging = null;
+  }
+
+  function onTouchStart(e){
+    const t = e.touches[0];
+    const id = getTokenId(t.target);
+    if(!id) return;
+    const el = document.getElementById('ft_'+id);
+    if(!el) return;
+    const p = getPos(id);
+    dragging = {id, offX: t.clientX - p.x, offY: t.clientY - p.y};
+    el.classList.add('drag-active');
+    e.preventDefault();
+  }
+
+  function onTouchMove(e){
+    if(!dragging) return;
+    const t = e.touches[0];
+    moveToken(dragging.id, t.clientX - dragging.offX, t.clientY - dragging.offY);
+    e.preventDefault();
+  }
+
+  function onTouchEnd(){ onDragEnd(); }
+
+  // Patch renderField so it respects overrides after rebuild
+  const _origRenderField = renderField;
+  window.renderField = function(d){
+    _origRenderField(d);
+    // Apply saved overrides after rebuild
+    Object.keys(overrides).forEach(id => {
+      const el = document.getElementById('ft_'+id);
+      if(el){ el.style.left=overrides[id].x+'px'; el.style.top=overrides[id].y+'px'; }
+      if(dragMode) el && el.classList.add('drag-enabled');
+    });
+    buildRows();
+  };
+
+  // Toggle controller visibility
+  const ctrl = document.getElementById('posController');
+  const showBtn = document.getElementById('posCtrlShowBtn');
+  document.getElementById('posCtrlToggle').onclick = function(){
+    ctrl.classList.add('hidden');
+    showBtn.style.display = 'block';
+  };
+  showBtn.onclick = function(){
+    ctrl.classList.remove('hidden');
+    showBtn.style.display = 'none';
+  };
+
+  // Drag toggle button
+  document.getElementById('pcDragToggle').onclick = function(){
+    dragMode = !dragMode;
+    this.textContent = dragMode ? '🖐 DRAG MODE: ON' : '🖐 DRAG MODE: OFF';
+    this.style.background = dragMode ? 'rgba(0,200,100,0.28)' : 'rgba(0,200,100,0.12)';
+    this.style.color = dragMode ? '#00E676' : '#00E676';
+    dragMode ? enableDrag() : disableDrag();
+  };
+
+  // Reset all
+  document.getElementById('pcResetAll').onclick = function(){
+    Object.keys(overrides).forEach(id => delete overrides[id]);
+    Object.keys(defaults).forEach(id => {
+      const el = document.getElementById('ft_'+id);
+      if(el){ el.style.left=defaults[id].x+'px'; el.style.top=defaults[id].y+'px'; }
+      updateCoord(id, defaults[id].x, defaults[id].y);
+    });
+  };
+
+  // Init rows
+  buildRows();
+})();
+</script>
+</body>
+</html>
