@@ -1250,26 +1250,27 @@ async function poll(){
     const d=await resp.json();
     const t1=d.team1||{},t2=d.team2||{};
 
-    // Flags
-    setFlag('flag1',t1.flag_img||t1.flag_manual||'');
-    setFlag('flag2',t2.flag_img||t2.flag_manual||'');
-
-    // Scores
-    const sc1=t1.score||'—',sc2=t2.score||'—';
-    st('tname1',t1.name||'TEAM 1');st('tname2',t2.name||'TEAM 2');
+    // Scores — use batting_team from server to determine correct display
+    const battingTeam = d.batting_team || 1;
+    // batT = currently batting team data, fieldT = fielding team data
+    const batT  = battingTeam===2 ? t2 : t1;
+    const fldT  = battingTeam===2 ? t1 : t2;
+    // Left side always shows batting team, right side shows fielding team
+    const leftT = batT, rightT = fldT;
+    const sc1=leftT.score||'—', sc2=rightT.score||'—';
+    st('tname1',leftT.name||'TEAM 1'); st('tname2',rightT.name||'TEAM 2');
+    setFlag('flag1',leftT.flag_img||leftT.flag_manual||'');
+    setFlag('flag2',rightT.flag_img||rightT.flag_manual||'');
     if(sc1!==_prevScore1){st('tscore1',sc1);bumpScore('tscore1');_prevScore1=sc1;}
     if(sc2!==_prevScore2){st('tscore2',sc2);bumpScore('tscore2');_prevScore2=sc2;}
-    const ov1=/^\d{1,2}\.\d$/.test(String(t1.overs))?t1.overs+' OV':'';
-    const ov2=/^\d{1,2}\.\d$/.test(String(t2.overs))?t2.overs+' OV':'';
+    const ov1=/^\d{1,2}\.\d$/.test(String(leftT.overs))?leftT.overs+' OV':'';
+    const ov2=/^\d{1,2}\.\d$/.test(String(rightT.overs))?rightT.overs+' OV':'';
     st('tovers1',ov1);st('tovers2',ov2);
 
-    // Batting badge — team with overs is batting (if 1st inn, team1; if 2nd inn where target set, try to determine)
-    // Simple heuristic: if t1 has overs and t2 doesn't, t1 batting; else t2 batting
-    const t1bat=!!t1.overs&&!t2.overs;
-    const t2bat=!!t2.overs&&!t1.overs;
+    // Batting badge — left is always batting
     const b1=document.getElementById('batBdg1'),b2=document.getElementById('batBdg2');
-    if(b1)b1.className='bat-badge'+(t1bat?'':' off');
-    if(b2)b2.className='bat-badge'+(t2bat?'':' off');
+    if(b1)b1.className='bat-badge';
+    if(b2)b2.className='bat-badge off';
 
     // Centre
     st('sCRR',d.crr||'—');st('sFmt',d.match_format||'');st('cTime',d.last_updated||'');
@@ -1285,10 +1286,10 @@ async function poll(){
     const animNew=currBalls.length!==_prevCurrCount;
     _prevCurrCount=currBalls.length;
 
-    // THIS OV
+    // THIS OV = current over being bowled
     st('topCurrNum','OV '+currOvNum);
     renderTopBalls('topCurrBalls','topCurrTot',currBalls,animNew);
-    // LAST OV
+    // LAST OV = just completed over (currOvNum-1)
     const lastOvNum=currOvNum>1?currOvNum-1:'—';
     st('topLastNum',prevBalls.length?'OV '+lastOvNum:'—');
     renderTopBalls('topLastBalls','topLastTot',prevBalls,false);
