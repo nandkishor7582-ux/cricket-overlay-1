@@ -173,8 +173,9 @@ def blank_data():
         "match_status":"LIVE", "yet_to_bat":"", "last_wicket":"",
         "current_over":0,
         "last_over_balls":[],     # current over's balls being bowled
-        "prev_over_balls":[],     # ← NEW: previous completed over's balls (for LAST OV display)
+        "prev_over_balls":[],     # previous completed over's balls (for LAST OV display)
         "current_ball":"",
+        "batting_team":1,         # 1 or 2 — which team slot is currently batting
         "batsman1":{}, "batsman2":{}, "bowler":{},
         "match_format":"T20", "series_name":"",
         "last_updated":""
@@ -356,14 +357,29 @@ def parse(html, data):
 
     if score_blk:
         rows = [c for c in score_blk.children if hasattr(c,'get_text')]
-        for i, row in enumerate(rows[:2]):
+        parsed_teams = []
+        for row in rows[:2]:
             raw = row.get_text(" ", strip=True)
             m = re.match(r'([A-Z][A-Za-z\s&]{0,20}?)\s+(\d{1,4})\s*/\s*(\d{1,2})\s*\(\s*([\d.]+)\s*\)', raw)
             if m:
-                key = "team1" if i == 0 else "team2"
-                data[key]["name"]  = m.group(1).strip()
-                data[key]["score"] = f"{m.group(2)}-{m.group(3)}"
-                data[key]["overs"] = m.group(4)
+                parsed_teams.append({"name": m.group(1).strip(), "score": f"{m.group(2)}-{m.group(3)}", "overs": m.group(4)})
+        # Lock positions by name, assign on first parse
+        for pt in parsed_teams:
+            if data["team1"]["name"] and pt["name"] == data["team1"]["name"]:
+                data["team1"]["score"] = pt["score"]; data["team1"]["overs"] = pt["overs"]
+            elif data["team2"]["name"] and pt["name"] == data["team2"]["name"]:
+                data["team2"]["score"] = pt["score"]; data["team2"]["overs"] = pt["overs"]
+            elif not data["team1"]["name"]:
+                data["team1"].update(pt)
+            elif not data["team2"]["name"]:
+                data["team2"].update(pt)
+        # Track batting team (first team in Cricbuzz score block = currently batting)
+        if parsed_teams:
+            bat_name = parsed_teams[0]["name"]
+            if data["team2"]["name"] and bat_name == data["team2"]["name"]:
+                data["batting_team"] = 2
+            else:
+                data["batting_team"] = 1
 
     # ── Fallback: meta description ────────────────────────────────────────────
     meta = soup.find("meta", {"name":"description"})
@@ -433,17 +449,20 @@ def parse(html, data):
         ov_el = mini.find("div", class_=lambda c: c and "text-2xl" in c and "font-bold" in c)
         if ov_el:
             try:
-                new_ov_num = int(ov_el.get_text(strip=True))
+                # Cricbuzz shows completed overs count (e.g. 3 = 3 overs done, bowling over 4)
+                completed_ovs = int(ov_el.get_text(strip=True))
+                # Currently bowling over = completed + 1
+                new_ov_num = completed_ovs + 1
                 old_ov_num = data.get("current_over", 0)
 
-                # ── KEY FIX: detect over change → save current balls as prev ──
+                # Detect over change → archive completed over's balls as prev
                 if new_ov_num != old_ov_num and old_ov_num > 0:
-                    # Over just changed: archive the completed over's balls
                     old_balls = data.get("last_over_balls", [])
                     if old_balls:
                         data["prev_over_balls"] = list(old_balls)
 
                 data["current_over"] = new_ov_num
+                data["completed_overs"] = completed_ovs
             except: pass
 
         inner = mini.find("div", class_=lambda c: c and "flex-col" in c and "w-full" in c)
