@@ -53,9 +53,25 @@ def scrape_match(match_id: str):
     while True:
         try:
             state = get_or_create_match(match_id)
+            prev  = state["data"]
             html  = fetch_page(url)
-            data  = parse(html, state["data"])
+            # Always start from blank so stale data doesn't persist
+            fresh = blank_data()
+            # Carry forward team names/flags if previously found (in case parse misses them this round)
+            for key in ["team1","team2"]:
+                for field in ["name","flag_img","flag_manual"]:
+                    if prev[key].get(field):
+                        fresh[key][field] = prev[key][field]
+            data  = parse(html, fresh)
             data["last_updated"] = datetime.now().strftime("%H:%M:%S")
+            # If team name still missing after parse, keep previous
+            for key in ["team1","team2"]:
+                if not data[key].get("name") and prev[key].get("name"):
+                    data[key]["name"] = prev[key]["name"]
+                if not data[key].get("score") and prev[key].get("score"):
+                    data[key]["score"] = prev[key]["score"]
+                if not data[key].get("overs") and prev[key].get("overs"):
+                    data[key]["overs"] = prev[key]["overs"]
             with _match_lock:
                 _matches[match_id]["data"]       = data
                 _matches[match_id]["last_fetch"]  = time.time()
