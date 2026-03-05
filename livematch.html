@@ -1196,16 +1196,212 @@ function renderBalls(balls,cid){const c=document.getElementById(cid);if(!c)retur
 function updateCBall(ball){if(ball===prevBall)return;const s=String(ball||'').trim().toUpperCase();if(s&&s!==prevBallVal&&prevBallVal!==''){if(s==='6')setTimeout(trigSix,80);else if(s==='4')setTimeout(trigFour,80);else if(s==='W')setTimeout(trigWkt,80);}prevBallVal=s;prevBall=ball;const old=document.getElementById('cball');if(!old)return;const el=old.cloneNode(false);el.id='cball';el.className='center-ball '+getCB(ball);el.textContent=getBD(ball);old.parentNode.replaceChild(el,old);}
 function showPill(){const p=document.getElementById('upill');p.style.display='block';p.style.animation='none';void p.offsetWidth;p.style.animation='upillAnim 2.5s ease forwards';setTimeout(()=>p.style.display='none',2600);}
 
-// ═══ MAIN POLL ═══
-async function poll(){
-  try{
-    const resp=await fetch('data.json?t='+Date.now());
-    if(!resp.ok)throw new Error('HTTP '+resp.status);
-    let d=await resp.json();
-    if(manualOverride)d={...d,...manualOverride};
-    const j=JSON.stringify(d);
-    if(j!==prevJ){showPill();prevJ=j;}
-    lastData=d;
+// ═══ CRICBUZZ DIRECT FETCH ═══
+// Tries multiple Cricbuzz API endpoints directly from the browser.
+// Works standalone (no Python server needed).
+// Set MATCH_ID below or pass ?match=XXXXX in the URL.
+
+const _urlParams = new URLSearchParams(window.location.search);
+let MATCH_ID = _urlParams.get('match') || _urlParams.get('id') || '';
+
+// ── CORS proxies (tried in order until one works) ──
+const CORS_PROXIES = [
+  u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u => `https://proxy.cors.sh/${u}`,
+];
+let _proxyIdx = 0;
+
+async function fetchViaProxy(url) {
+  for (let attempt = 0; attempt < CORS_PROXIES.length; attempt++) {
+    const idx = (_proxyIdx + attempt) % CORS_PROXIES.length;
+    try {
+      const proxyUrl = CORS_PROXIES[idx](url);
+      const r = await fetch(proxyUrl, { cache: 'no-store' });
+      if (r.ok) { _proxyIdx = idx; return await r.json(); }
+    } catch(e) {}
+  }
+  throw new Error('All proxies failed for: ' + url);
+}
+
+// ── Parse Cricbuzz miniscore JSON response ──
+function parseMiniscore(ms) {
+  const d = {
+    team1: { name:'', score:'', overs:'', flag_img:'' },
+    team2: { name:'', score:'', overs:'', flag_img:'' },
+    crr:'', rrr:'', target:'', need:'', partnership:'',
+    match_status:'LIVE', yet_to_bat:'', last_wicket:'',
+    current_over:0, last_over_balls:[], current_ball:'',
+    batsman1:{}, batsman2:{}, bowler:{},
+    match_format:'T20', last_updated: new Date().toLocaleTimeString()
+  };
+
+  try {
+    // ── Innings scores ──
+    const innings = ms.matchScoreDetails?.inningsScoreList || ms.inningsScoreList || [];
+    innings.forEach((inn, i) => {
+      const key = i === 0 ? 'team1' : 'team2';
+      d[key].name  = inn.batTeamName || inn.teamName || '';
+      d[key].score = `${inn.score||0}-${inn.wickets||0}`;
+      d[key].overs = String(inn.overs || '');
+    });
+    // If only 1 innings, team2 is the bowling team
+    if (innings.length === 1) {
+      d.team2.name = ms.bowlingTeam?.teamName || ms.matchHeader?.team2?.name || '';
+    }
+
+    // ── Match header for team names when innings missing ──
+    if (!d.team1.name) {
+      d.team1.name = ms.matchHeader?.team1?.name || ms.matchHeader?.team1?.shortName || '';
+      d.team2.name = ms.matchHeader?.team2?.name || ms.matchHeader?.team2?.shortName || '';
+    }
+
+    // ── Miniscore stats ──
+    const mini = ms.miniscore || ms;
+    d.crr     = String(mini.currentRunRate || '');
+    d.rrr     = String(mini.requiredRunRate || '');
+    d.target  = String(mini.target || '');
+    d.match_status = mini.status || mini.matchScoreDetails?.customStatus || 'LIVE';
+    d.last_wicket  = mini.lastWicket || '';
+
+    // Partnership
+    const ps = mini.partnerShip;
+    if (ps) d.partnership = `${ps.runs||0}(${ps.balls||0})`;
+
+    // Need
+    if (mini.target && mini.miniscore) {
+      const rem = mini.target - (parseInt(mini.miniscore.split('/')[0])||0);
+      if (rem > 0) d.need = `Need ${rem} runs`;
+    }
+
+    // Over balls
+    const recentOversStats = mini.recentOvsStats || mini.recentBallsStats || '';
+    if (recentOversStats) {
+      d.last_over_balls = recentOversStats.trim().split(/\s+/).filter(Boolean)
+        .map(b => b.replace(/[()]/g,'').toUpperCase());
+      if (d.last_over_balls.length)
+        d.current_ball = d.last_over_balls[d.last_over_balls.length - 1];
+    }
+    d.current_over = mini.overNumber || 0;
+
+    // Batsmen
+    const bs = mini.batsmanStriker;
+    const bns = mini.batsmanNonStriker;
+    if (bs?.batName) d.batsman1 = {
+      name: bs.batName, runs: bs.batRuns||0, balls: bs.batBalls||0,
+      fours: bs.batFours||0, sixes: bs.batSixes||0,
+      sr: bs.batStrikeRate||'0.00', on_strike: true, photo: _photo_cache[bs.batName]||''
+    };
+    if (bns?.batName) d.batsman2 = {
+      name: bns.batName, runs: bns.batRuns||0, balls: bns.batBalls||0,
+      fours: bns.batFours||0, sixes: bns.batSixes||0,
+      sr: bns.batStrikeRate||'0.00', on_strike: false, photo: _photo_cache[bns.batName]||''
+    };
+
+    // Bowler
+    const bwl = mini.bowlerStriker || mini.bowlerNonStriker;
+    if (bwl?.bowlName) d.bowler = {
+      name: bwl.bowlName, overs: bwl.bowlOvs||'0',
+      maidens: bwl.bowlMaidens||0, runs: bwl.bowlRuns||0,
+      wickets: bwl.bowlWkts||0, economy: bwl.bowlEcon||'0.00',
+      photo: _photo_cache[bwl.bowlName]||''
+    };
+
+    // Match format
+    const fmt = ms.matchHeader?.matchFormat || ms.matchType || '';
+    if (fmt) d.match_format = fmt.toUpperCase();
+
+  } catch(e) { console.warn('parseMiniscore error:', e); }
+  return d;
+}
+
+// ── Show match ID prompt if not set ──
+function showMatchPrompt() {
+  const existing = document.getElementById('matchPrompt');
+  if (existing) return;
+  const div = document.createElement('div');
+  div.id = 'matchPrompt';
+  div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  div.innerHTML = `
+    <div style="background:#0a1628;border:2px solid #FF6B00;border-radius:14px;padding:32px 40px;width:480px;text-align:center;">
+      <div style="font-family:'Bebas Neue';font-size:48px;color:#FFD700;letter-spacing:3px;margin-bottom:8px;">🏏 CRICKET OVERLAY</div>
+      <div style="font-family:'Oswald';font-size:13px;color:rgba(255,255,255,.5);letter-spacing:2px;margin-bottom:24px;">ENTER CRICBUZZ MATCH ID OR URL</div>
+      <input id="midInput" placeholder="e.g. 12345  or paste full Cricbuzz URL"
+        style="width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,107,0,.6);border-radius:8px;
+               color:#fff;font-family:'Bebas Neue';font-size:22px;padding:10px 14px;outline:none;margin-bottom:16px;">
+      <div style="font-family:'Oswald';font-size:11px;color:rgba(255,255,255,.35);margin-bottom:16px;">
+        Get ID from: cricbuzz.com/live-cricket-scores/<b style="color:#FFD700">12345</b>/...
+      </div>
+      <button onclick="applyMatchId()" style="width:100%;background:linear-gradient(90deg,#FF6B00,#FFD700);color:#000;
+        font-family:'Oswald';font-size:16px;font-weight:900;padding:12px;border:none;border-radius:8px;cursor:pointer;letter-spacing:2px;">
+        ▶ START LIVE OVERLAY
+      </button>
+    </div>`;
+  document.body.appendChild(div);
+  setTimeout(() => document.getElementById('midInput')?.focus(), 100);
+  document.getElementById('midInput')?.addEventListener('keydown', e => { if(e.key==='Enter') applyMatchId(); });
+}
+
+function applyMatchId() {
+  const raw = document.getElementById('midInput')?.value?.trim() || '';
+  const m = raw.match(/\d{4,8}/);
+  if (!m) { alert('Please enter a valid Cricbuzz match ID or URL'); return; }
+  MATCH_ID = m[0];
+  const prompt = document.getElementById('matchPrompt');
+  if (prompt) prompt.remove();
+  // Update URL bar
+  const url = new URL(window.location.href);
+  url.searchParams.set('match', MATCH_ID);
+  window.history.replaceState({}, '', url);
+  poll();
+  pollInterval = setInterval(poll, 3000);
+}
+
+// ── Main poll ──
+let pollInterval = null;
+
+async function poll() {
+  // If no match ID, show prompt
+  if (!MATCH_ID) { showMatchPrompt(); return; }
+
+  try {
+    // PRIMARY: Cricbuzz miniscore API
+    const apiUrl = `https://www.cricbuzz.com/api/cricket-match/${MATCH_ID}/miniscore`;
+    let raw = await fetchViaProxy(apiUrl);
+
+    // Some proxies wrap in {contents:...} or {data:...}
+    if (raw?.contents) { try { raw = JSON.parse(raw.contents); } catch(e){} }
+    if (raw?.data) raw = raw.data;
+
+    let d = parseMiniscore(raw);
+
+    // Apply manual override on top
+    if (manualOverride) {
+      if (manualOverride.team1) d.team1 = { ...d.team1, ...manualOverride.team1 };
+      if (manualOverride.team2) d.team2 = { ...d.team2, ...manualOverride.team2 };
+      ['crr','rrr','target','need','partnership','match_status','last_wicket',
+       'last_over_balls','current_ball','batsman1','batsman2','bowler'].forEach(k => {
+        if (manualOverride[k] !== undefined) d[k] = manualOverride[k];
+      });
+    }
+
+    const j = JSON.stringify(d);
+    if (j !== prevJ) { showPill(); prevJ = j; }
+    lastData = d;
+
+    applyDataToUI(d);
+
+  } catch(err) {
+    console.error('Poll error:', err);
+    // If we have manualOverride, still apply it
+    if (manualOverride && lastData) {
+      const d = { ...lastData, ...manualOverride };
+      applyDataToUI(d);
+    }
+  }
+}
+
+function applyDataToUI(d) {
     const t1=d.team1||{},t2=d.team2||{};
     // Flags
     setFlag('flag1',t1.flag_img||'',manualFlags.f1,'🏏');
@@ -1213,18 +1409,18 @@ async function poll(){
     const fp1n=document.getElementById('admFN1'),fp2n=document.getElementById('admFN2');
     if(fp1n)fp1n.textContent=(t1.name||'TEAM 1').toUpperCase();
     if(fp2n)fp2n.textContent=(t2.name||'TEAM 2').toUpperCase();
-    if(!manualFlags.f1&&t1.flag_img){const p=document.getElementById('admFP1');if(p&&!p.querySelector('img'))p.innerHTML=`<img src="${t1.flag_img}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentNode.textContent='🏏'"`;}
-    if(!manualFlags.f2&&t2.flag_img){const p=document.getElementById('admFP2');if(p&&!p.querySelector('img'))p.innerHTML=`<img src="${t2.flag_img}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentNode.textContent='🏏'"`;}
+    if(!manualFlags.f1&&t1.flag_img){const p=document.getElementById('admFP1');if(p&&!p.querySelector('img'))p.innerHTML=`<img src="${t1.flag_img}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentNode.textContent='🏏'">`;}
+    if(!manualFlags.f2&&t2.flag_img){const p=document.getElementById('admFP2');if(p&&!p.querySelector('img'))p.innerHTML=`<img src="${t2.flag_img}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentNode.textContent='🏏'">`;}
     // Names + scores
     st('tname1',t1.name||'TEAM 1');st('tname2',t2.name||'TEAM 2');
     st('score1',t1.score||'---',true);
     const s2=t2.score;
     if(s2&&s2!=='0-0'&&s2!=='---'&&s2!==''){
-      st('score2',s2,true);document.getElementById('score2').style.opacity='1';document.getElementById('score2').style.fontSize='78px';
+      st('score2',s2,true);document.getElementById('score2').style.opacity='1';document.getElementById('score2').style.fontSize='66px';
       document.getElementById('bowlingBadge').style.display='none';document.getElementById('overs2').style.visibility='visible';
       const ov2=t2.overs&&/^\d{1,2}(\.\d)?$/.test(String(t2.overs))?t2.overs:'';st('overs2',ov2?ov2+' OV':'');
     } else {
-      document.getElementById('score2').style.opacity='.5';document.getElementById('score2').style.fontSize='40px';
+      document.getElementById('score2').style.opacity='.5';document.getElementById('score2').style.fontSize='36px';
       st('score2','—');document.getElementById('bowlingBadge').style.display='block';document.getElementById('overs2').style.visibility='hidden';
     }
     st('overs1',t1.overs&&/^\d{1,2}(\.\d)?$/.test(String(t1.overs))?t1.overs+' OV':'');
@@ -1245,7 +1441,7 @@ async function poll(){
     st('nneed',d.need||'');st('nlastw',(d.last_wicket||'---').substring(0,40));
     st('nvenue',(d.venue&&d.venue.name?d.venue.name.split(' ').slice(0,3).join(' '):d.match_format||'T20'));
     // Over balls
-    st('overLbl','THIS OVER ('+( d.current_over||0)+'):');
+    st('overLbl','THIS OVER ('+(d.current_over||0)+'):');
     renderBalls(balls,'overBalls');
     const tot=(balls||[]).reduce((a,b)=>{const n=parseInt(b);return a+(isNaN(n)?0:n);},0);st('overTot',tot);
     // Bat 1
@@ -1253,7 +1449,6 @@ async function poll(){
     setPhoto('bat1PhotoWrap','bat1Svg',b1.photo||'');
     st('bat1Name',b1.name||'BATSMAN 1');st('bat1Score',b1.runs!==undefined?b1.runs+'('+b1.balls+')':'0(0)',true);
     st('bat1Fours',b1.fours!==undefined?b1.fours:0);st('bat1Sixes',b1.sixes!==undefined?b1.sixes:0);st('bat1SR',b1.sr||'0.00');
-    // Strike bat icon: show on striker, hide on non-striker
     const s1el=document.getElementById('bat1StrikeIcon');
     if(s1el)s1el.style.opacity=b1.on_strike?'1':'0';
     // Bat 2
@@ -1270,10 +1465,15 @@ async function poll(){
     st('bowlOv',bw.overs!==undefined?bw.overs:'0');st('bowlMd',bw.maidens!==undefined?bw.maidens:'0');st('bowlEco',bw.economy!==undefined?bw.economy:'0.00');
     // Bottom bar
     const lw=d.last_wicket||'---';st('bLastw',lw);st('nlastw',lw.substring(0,38));st('bYtb',d.yet_to_bat||'---');
-  }catch(err){console.error('Poll error:',err);}
 }
-poll();
-setInterval(poll,2000);
+
+// Start
+if (MATCH_ID) {
+  poll();
+  pollInterval = setInterval(poll, 3000);
+} else {
+  showMatchPrompt();
+}
 </script>
 </body>
 </html>
