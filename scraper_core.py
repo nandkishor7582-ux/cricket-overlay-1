@@ -1,9 +1,8 @@
 """
-LIVE CRICKET OBS OVERLAY v19.1
+LIVE CRICKET OBS OVERLAY v19.0
 - Scrapes m.cricbuzz.com (no Selenium)
 - Photos: fetched via Cricbuzz search API + cached permanently
 - Port 8000 → livematch.html + data.json
-- v19.1: Added prev_over_balls tracking for LAST OV display
 """
 
 import re, json, time, threading, http.server, socketserver, os, requests
@@ -171,11 +170,7 @@ def blank_data():
         "team2":    {"name":"","score":"","overs":"","flag_img":"","flag_manual":""},
         "crr":"", "rrr":"", "target":"", "need":"", "partnership":"",
         "match_status":"LIVE", "yet_to_bat":"", "last_wicket":"",
-        "current_over":0,
-        "last_over_balls":[],     # current over's balls being bowled
-        "prev_over_balls":[],     # previous completed over's balls (for LAST OV display)
-        "current_ball":"",
-        "batting_team":1,         # 1 or 2 — which team slot is currently batting
+        "current_over":0, "last_over_balls":[], "current_ball":"",
         "batsman1":{}, "batsman2":{}, "bowler":{},
         "match_format":"T20", "series_name":"",
         "last_updated":""
@@ -272,17 +267,20 @@ def _extract_miniscore_json(html):
     cs_idx = s.find("customStatus")
     if cs_idx >= 0:
         cs_chunk = s[cs_idx:cs_idx+200]
+        # Double-escaped: customStatus\\\":\"India won by 5 wkts\\\"
         cs_m = re.search(r'customStatus[^:]*:([^,}{]{2,80})', cs_chunk)
         if cs_m:
-            val = cs_m.group(1).strip().replace('\\"','').replace('\\\\','').replace('"','').replace("'",'').strip()
+            val = cs_m.group(1).strip().replace('\\"','').replace('\\\\','').replace('"','').replace("'","").strip()
             if val and len(val) > 2: result["status"] = val
 
     # lastWicket
     lw_idx = s.find("lastWicket")
     if lw_idx >= 0:
         lw_chunk = s[lw_idx:lw_idx+300]
+        # Pattern: lastWicket\\\":\"VALUE\\\",
         lw_m = re.search(r'lastWicket[^:]*:[^"]*"([^"\\]{5,150})', lw_chunk)
         if not lw_m:
+            # Try extracting between pairs of escaped quotes
             lw_m = re.search(r'lastWicket.{0,10}:(.{5,150})(?=,\s*\\\\"|,\s*"rem)', lw_chunk)
         if lw_m:
             val = lw_m.group(1).replace('\\\\"','').replace('\\"','').replace('\\\\','').replace('"','').strip()
@@ -308,47 +306,6 @@ def _extract_miniscore_json(html):
 
     return result
 
-def _extract_scores_from_json(html):
-    """
-    Extract innings scores from the embedded Next.js JSON.
-    Returns list of {name, score, overs} dicts.
-    """
-    results = []
-    try:
-        # Look for inningsScore patterns: "runs":123,"wickets":4,"overs":"18.2"
-        for sm in re.finditer(r'<script[^>]*>(.*?)</script>', html, re.DOTALL):
-            content = sm.group(1)
-            if 'inningsScore' not in content and 'innings' not in content.lower():
-                continue
-            # Find innings entries with runs/wickets
-            entries = re.findall(
-                r'"(?:inningsScore|innings)[^"]*"[^{]*\{([^}]{0,400})\}', content
-            )
-            for entry in entries:
-                rm = re.search(r'"runs"[^:]*:\s*(\d+)', entry)
-                wm = re.search(r'"wickets"[^:]*:\s*(\d+)', entry)
-                om = re.search(r'"overs"[^:]*:\s*"?([\d.]+)"?', entry)
-                nm = re.search(r'"(?:batTeamName|teamName|bat_team|team)[^"]*"[^:]*:\s*"([^"]{2,30})"', entry)
-                if rm and wm:
-                    score = f"{rm.group(1)}-{wm.group(1)}"
-                    name = nm.group(1).strip() if nm else ""
-                    overs = om.group(1) if om else ""
-                    results.append({"name": name, "score": score, "overs": overs})
-            if results:
-                break
-        # Also try compact pattern: 123/4 (18.2 ov)
-        if not results:
-            pat = re.findall(
-                r'([A-Z][A-Za-z ]{2,20}?)\s*:?\s*(\d{1,4})/(\d{1,2})\s*[\(\[]?\s*([\d.]+)\s*(?:Ov|ov|overs)?',
-                html
-            )
-            for m in pat[:2]:
-                results.append({"name": m[0].strip(), "score": f"{m[1]}-{m[2]}", "overs": m[3]})
-    except Exception:
-        pass
-    return results
-
-
 # ─── Parser ───────────────────────────────────────────────────────────────────
 
 def parse(html, data):
@@ -367,6 +324,7 @@ def parse(html, data):
             data["match_format"] = fmt.upper(); break
 
     # ── Status ────────────────────────────────────────────────────────────────
+    # Only short clean result — never capture long commentary descriptions
     st_found = ""
     r1 = re.search(r'([A-Z][a-zA-Z\s]{2,20}?\s+won by\s+\d+\s+(?:wkts?|runs?)[^<\n,]{0,20})', full)
     if r1: st_found = r1.group(1).strip()
@@ -388,7 +346,7 @@ def parse(html, data):
         if name:
             page_photos[name] = src.replace("d=low","d=high")
 
-    # ── Team scores ──────────────────────────────────────────────────────────
+    # ── Team scores (div.text-lg.font-bold) ───────────────────────────────────
     score_blk = None
     for d in soup.find_all("div"):
         cls = " ".join(d.get("class",[]))
@@ -398,43 +356,14 @@ def parse(html, data):
 
     if score_blk:
         rows = [c for c in score_blk.children if hasattr(c,'get_text')]
-        parsed_teams = []
-        for row in rows[:2]:
+        for i, row in enumerate(rows[:2]):
             raw = row.get_text(" ", strip=True)
-            # Try strict match first
             m = re.match(r'([A-Z][A-Za-z\s&]{0,20}?)\s+(\d{1,4})\s*/\s*(\d{1,2})\s*\(\s*([\d.]+)\s*\)', raw)
-            if not m:
-                # Broader match: just find team name and score pattern anywhere in string
-                m = re.search(r'([A-Z][A-Za-z]{1,20}(?:\s[A-Za-z]{1,15})?)\s+(\d{1,4})/(\d{1,2})\s*\(?([\d.]+)?', raw)
             if m:
-                overs = m.group(4) or ""
-                parsed_teams.append({"name": m.group(1).strip(), "score": f"{m.group(2)}-{m.group(3)}", "overs": overs})
-
-    # Also try finding scores directly from full text using broad patterns
-    if not score_blk:
-        score_patterns = re.findall(r'([A-Z][A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,4})/(\d{1,2})\s*\(\s*([\d.]+)\s*(?:Ov)?\)', full)
-        if score_patterns:
-            parsed_teams = [{"name": m[0].strip(), "score": f"{m[1]}-{m[2]}", "overs": m[3]} for m in score_patterns[:2]]
-        else:
-            parsed_teams = []
-
-    # Lock positions by name, assign on first parse
-    for pt in parsed_teams:
-        if data["team1"]["name"] and pt["name"] == data["team1"]["name"]:
-            data["team1"]["score"] = pt["score"]; data["team1"]["overs"] = pt["overs"]
-        elif data["team2"]["name"] and pt["name"] == data["team2"]["name"]:
-            data["team2"]["score"] = pt["score"]; data["team2"]["overs"] = pt["overs"]
-        elif not data["team1"]["name"]:
-            data["team1"].update(pt)
-        elif not data["team2"]["name"]:
-            data["team2"].update(pt)
-    # Track batting team (first team in Cricbuzz score block = currently batting)
-    if parsed_teams:
-        bat_name = parsed_teams[0]["name"]
-        if data["team2"]["name"] and bat_name == data["team2"]["name"]:
-            data["batting_team"] = 2
-        else:
-            data["batting_team"] = 1
+                key = "team1" if i == 0 else "team2"
+                data[key]["name"]  = m.group(1).strip()
+                data[key]["score"] = f"{m.group(2)}-{m.group(3)}"
+                data[key]["overs"] = m.group(4)
 
     # ── Fallback: meta description ────────────────────────────────────────────
     meta = soup.find("meta", {"name":"description"})
@@ -448,22 +377,12 @@ def parse(html, data):
             data["team1"].update({"name":dm.group(1).strip(),"score":dm.group(2).replace("/","-"),"overs":dm.group(3)})
             data["team2"].update({"name":dm.group(4).strip(),"score":dm.group(5).replace("/","-")})
 
-    # ── Score from miniscore JSON (most reliable) ─────────────────────────────
-    # Extract innings scores from the embedded JSON
-    score_from_json = _extract_scores_from_json(html)
-    if score_from_json:
-        for sf in score_from_json:
-            if data["team1"]["name"] and sf["name"] and sf["name"].lower() in data["team1"]["name"].lower():
-                data["team1"]["score"] = sf["score"]; data["team1"]["overs"] = sf.get("overs","")
-            elif data["team2"]["name"] and sf["name"] and sf["name"].lower() in data["team2"]["name"].lower():
-                data["team2"]["score"] = sf["score"]; data["team2"]["overs"] = sf.get("overs","")
-            elif not data["team1"]["name"] and sf.get("name"):
-                data["team1"].update({"name":sf["name"],"score":sf["score"],"overs":sf.get("overs","")})
-            elif not data["team2"]["name"] and sf.get("name"):
-                data["team2"].update({"name":sf["name"],"score":sf["score"],"overs":sf.get("overs","")})
-
-    # ── Embedded Next.js miniscore JSON ──────────────────────────────────────
-    bat_names = []
+    # ── Embedded Next.js miniscore JSON (most reliable source) ───────────────
+    # Cricbuzz inlines live match data in self.__next_f.push scripts
+    # Keys: currentRunRate, requiredRunRate, partnerShip, target, customStatus,
+    #       lastWicket, batsmanStriker/NonStriker (id,name,runs,balls,fours,sixes,strikeRate)
+    #       bowlerStriker/NonStriker (id,name,overs,maidens,economy,runs,wickets,playerUrl)
+    bat_names = []   # collect for async photo fetch — defined here, used throughout
     mj = _extract_miniscore_json(html)
     if mj:
         if mj.get("crr"):      data["crr"]    = mj["crr"]
@@ -472,6 +391,7 @@ def parse(html, data):
         if mj.get("pship"):    data["partnership"] = mj["pship"]
         if mj.get("status"):   data["match_status"] = mj["status"][:50]
         if mj.get("lastWkt"):  data["last_wicket"] = mj["lastWkt"]
+        # Batsmen — full stats from JSON (fours, sixes, SR)
         if mj.get("bat1"):
             b = mj["bat1"]
             photo = page_photos.get(b["name"],"") or _photo_cache.get(b["name"],"")
@@ -482,17 +402,19 @@ def parse(html, data):
             photo = page_photos.get(b["name"],"") or _photo_cache.get(b["name"],"")
             data["batsman2"] = {**b, "photo": photo}
             bat_names.append(b["name"])
+        # Bowler — full stats from JSON
         if mj.get("bowl"):
             bw = mj["bowl"]
             photo = page_photos.get(bw["name"],"") or _photo_cache.get(bw["name"],"")
             data["bowler"] = {**bw, "photo": photo}
             bat_names.append(bw["name"])
+        # Also store player slugs for photo lookup
         if mj.get("player_slugs"):
             for name, (pid, slug) in mj["player_slugs"].items():
                 if name not in _photo_cache:
                     _player_slug_cache[name] = (pid, slug)
 
-    # ── CRR / RRR / Target / Need fallbacks ──────────────────────────────────
+    # ── CRR / RRR / Target / Need — fallback from visible page text ──────────
     if not data["crr"]:
         mm = re.search(r'CRR[:\s]*([\d.]+)', full, re.I)
         if mm: data["crr"] = mm.group(1)
@@ -506,7 +428,7 @@ def parse(html, data):
         mm = re.search(r'[Nn]eed[s]?\s+(\d+)\s*run', full)
         if mm: data["need"] = mm.group(1)
 
-    # ── Live miniscore block (HTML) — over balls ──────────────────────────────
+    # ── Live miniscore block (HTML) — over balls, fallback stats ─────────────
     mini = None
     for d in soup.find_all("div"):
         cls = " ".join(d.get("class",[]))
@@ -517,21 +439,7 @@ def parse(html, data):
         # Over number
         ov_el = mini.find("div", class_=lambda c: c and "text-2xl" in c and "font-bold" in c)
         if ov_el:
-            try:
-                # Cricbuzz shows completed overs count (e.g. 3 = 3 overs done, bowling over 4)
-                completed_ovs = int(ov_el.get_text(strip=True))
-                # Currently bowling over = completed + 1
-                new_ov_num = completed_ovs + 1
-                old_ov_num = data.get("current_over", 0)
-
-                # Detect over change → archive completed over's balls as prev
-                if new_ov_num != old_ov_num and old_ov_num > 0:
-                    old_balls = data.get("last_over_balls", [])
-                    if old_balls:
-                        data["prev_over_balls"] = list(old_balls)
-
-                data["current_over"] = new_ov_num
-                data["completed_overs"] = completed_ovs
+            try: data["current_over"] = int(ov_el.get_text(strip=True))
             except: pass
 
         inner = mini.find("div", class_=lambda c: c and "flex-col" in c and "w-full" in c)
@@ -619,7 +527,7 @@ def parse(html, data):
         if len(bats)>1 and not data.get("batsman2",{}).get("name"):
             data["batsman2"] = bats[1]
 
-    # ── Bowler fallback ───────────────────────────────────────────────────────
+    # ── Bowler fallback: [O-M-R-W] from commentary ───────────────────────────
     if not data.get("bowler",{}).get("name"):
         bm = re.search(r'([A-Z][a-zA-Z\s\.]{3,25}?)\s+\[([\d.]+)-(\d+)-(\d+)-(\d+)\]', full)
         if bm:
