@@ -67,8 +67,8 @@ html,body{width:1280px;height:720px;overflow:hidden;background:transparent;font-
 .team-r::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.06) 0%,transparent 50%,rgba(0,0,0,.2) 100%);pointer-events:none;}
 .team-r::after{content:'';position:absolute;left:-20px;top:0;bottom:0;width:40px;background:inherit;transform:skewX(-6deg);z-index:1;}
 .center-top{width:230px;flex-shrink:0;background:linear-gradient(180deg,#1a3a1a 0%,#0d2a0d 50%,#0a200a 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;position:relative;z-index:5;border-left:2px solid rgba(255,200,0,.3);border-right:2px solid rgba(255,200,0,.3);}
-.t-score{font-family:'Bebas Neue';font-size:86px;line-height:.9;color:var(--score-yellow);text-shadow:0 0 20px rgba(255,200,0,.5),0 2px 0 rgba(0,0,0,.8);flex-shrink:0;letter-spacing:-1px;}
-.t-overs{font-family:'Teko';font-size:56px;font-weight:600;color:var(--score-yellow2);background:rgba(0,0,0,.4);padding:1px 8px;border-radius:4px;letter-spacing:1px;flex-shrink:0;}
+.t-score{font-family:'Bebas Neue';font-size:66px;line-height:.9;color:var(--score-yellow);text-shadow:0 0 20px rgba(255,200,0,.5),0 2px 0 rgba(0,0,0,.8);flex-shrink:0;letter-spacing:-1px;}
+.t-overs{font-family:'Teko';font-size:36px;font-weight:600;color:var(--score-yellow2);background:rgba(0,0,0,.4);padding:1px 8px;border-radius:4px;letter-spacing:1px;flex-shrink:0;}
 .flag-wrap{position:relative;width:92px;height:92px;flex-shrink:0;cursor:pointer;}
 .flag-ring-outer{position:absolute;inset:0;border-radius:50%;background:conic-gradient(var(--gold) 0deg,var(--gold2) 60deg,#fff8c0 90deg,var(--gold) 130deg,var(--gold2) 180deg,var(--gold) 220deg,#fff8c0 260deg,var(--gold) 300deg,var(--gold2) 340deg,var(--gold) 360deg);animation:goldSpin 2s linear infinite;box-shadow:0 0 16px rgba(255,200,0,.7),0 0 32px rgba(255,150,0,.4);}
 @keyframes goldSpin{to{transform:rotate(360deg);}}
@@ -76,15 +76,15 @@ html,body{width:1280px;height:720px;overflow:hidden;background:transparent;font-
 .flag-ring-inner img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
 .t-info{display:flex;flex-direction:column;justify-content:center;}
 .t-info.right{align-items:flex-end;}
-.t-name{font-family:'Oswald';font-size:44px;font-weight:700;color:#fff;letter-spacing:3px;text-transform:uppercase;}
+.t-name{font-family:'Oswald';font-size:30px;font-weight:700;color:#fff;letter-spacing:3px;text-transform:uppercase;}
 .t-name-bg{display:inline-block;background:rgba(0,0,0,.35);padding:1px 8px;border-radius:3px;}
 .score-label{writing-mode:vertical-rl;text-orientation:mixed;transform:rotate(180deg);font-family:'Oswald';font-size:11px;font-weight:700;letter-spacing:3px;color:var(--score-yellow);background:rgba(0,0,0,.5);padding:6px 3px;position:absolute;left:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;border-right:2px solid var(--gold);}
-.status-badge{font-family:'Oswald';font-size:26px;font-weight:700;letter-spacing:3px;padding:4px 18px;border-radius:20px;animation:blink 1.5s infinite;}
+.status-badge{font-family:'Oswald';font-size:18px;font-weight:700;letter-spacing:3px;padding:4px 18px;border-radius:20px;animation:blink 1.5s infinite;}
 .sb-live{background:#e8001d;color:#fff;box-shadow:0 0 20px rgba(232,0,29,.8);}
 .sb-break{background:#1050b0;color:#fff;}
 .sb-inn{background:#106020;color:#fff;}
 @keyframes blink{0%,100%{opacity:1;}50%{opacity:.75;transform:scale(1.04);}}
-.center-ball{width:70px;height:70px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue';font-size:44px;border:3px solid rgba(255,255,255,.2);animation:ballPop .5s cubic-bezier(.34,1.56,.64,1);}
+.center-ball{width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue';font-size:36px;border:3px solid rgba(255,255,255,.2);animation:ballPop .5s cubic-bezier(.34,1.56,.64,1);}
 @keyframes ballPop{from{transform:scale(0) rotate(-180deg);opacity:0;}}
 .cb-dot{background:rgba(255,255,255,.08);color:rgba(255,255,255,.3);}
 .cb-1,.cb-2,.cb-3{background:linear-gradient(135deg,#1a5c20,#2e9c38);color:#fff;border-color:#55cc66;box-shadow:0 0 20px rgba(40,150,50,.7);}
