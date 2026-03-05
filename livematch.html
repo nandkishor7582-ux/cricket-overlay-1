@@ -1197,19 +1197,31 @@ function updateCBall(ball){if(ball===prevBall)return;const s=String(ball||'').tr
 function showPill(){const p=document.getElementById('upill');p.style.display='block';p.style.animation='none';void p.offsetWidth;p.style.animation='upillAnim 2.5s ease forwards';setTimeout(()=>p.style.display='none',2600);}
 
 // ═══ MAIN POLL — fetches data.json from Python server ═══
+let _pollErrors=0;
+const _errDiv=(()=>{const d=document.createElement('div');d.style.cssText='position:fixed;bottom:4px;left:4px;z-index:9999;font-family:monospace;font-size:10px;color:#ff4444;background:rgba(0,0,0,.8);padding:2px 6px;border-radius:4px;display:none;';document.body.appendChild(d);return d;})();
+
 async function poll(){
   try{
     const resp=await fetch('data.json?t='+Date.now());
     if(!resp.ok)throw new Error('HTTP '+resp.status);
     let d=await resp.json();
-    if(manualOverride)d={...d,...manualOverride};
+    // Deep merge manual override — keep team objects intact
+    if(manualOverride){
+      if(manualOverride.team1)d.team1={...d.team1,...manualOverride.team1};
+      if(manualOverride.team2)d.team2={...d.team2,...manualOverride.team2};
+      const keys=['crr','rrr','target','need','partnership','match_status','last_wicket','current_over','last_over_balls','current_ball','batsman1','batsman2','bowler'];
+      keys.forEach(k=>{if(manualOverride[k]!==undefined)d[k]=manualOverride[k];});
+    }
     const j=JSON.stringify(d);
     if(j!==prevJ){showPill();prevJ=j;}
     lastData=d;
+    _pollErrors=0;_errDiv.style.display='none';
     applyData(d);
   }catch(err){
+    _pollErrors++;
+    _errDiv.textContent='⚠ data.json fetch failed ('+_pollErrors+'x): '+err.message+' — Is Python server running?';
+    _errDiv.style.display='block';
     console.warn('Poll error:',err);
-    // Still apply manual override even if server fetch fails
     if(manualOverride){
       const d=lastData?{...lastData,...manualOverride}:manualOverride;
       applyData(d);

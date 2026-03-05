@@ -346,114 +346,54 @@ def parse(html, data):
         if name:
             page_photos[name] = src.replace("d=low","d=high")
 
-    # ── Team scores — multi-strategy extraction ───────────────────────────────
-    score_found = False
-
-    # Strategy 1: div with class containing "text-lg" and "font-bold"
-    score_blk = None
-    for d in soup.find_all("div"):
-        cls = " ".join(d.get("class",[]))
-        if "text-lg" in cls and "font-bold" in cls:
-            if re.search(r'\d+\s*/\s*\d+', d.get_text(strip=True)):
-                score_blk = d; break
-
-    if score_blk:
-        rows = [c for c in score_blk.children if hasattr(c,'get_text')]
-        for i, row in enumerate(rows[:2]):
-            raw = row.get_text(" ", strip=True)
-            m = re.match(r'([A-Z][A-Za-z\s&]{0,20}?)\s+(\d{1,4})\s*/\s*(\d{1,2})\s*\(\s*([\d.]+)\s*\)', raw)
-            if m:
-                key = "team1" if i == 0 else "team2"
-                data[key]["name"]  = m.group(1).strip()
-                data[key]["score"] = f"{m.group(2)}-{m.group(3)}"
-                data[key]["overs"] = m.group(4)
-                score_found = True
-
-    # Strategy 2: any element containing score pattern "TEAMNAME 123/4 (12.3)"
-    if not score_found:
-        matches = re.findall(
-            r'([A-Z][A-Za-z\s&]{1,22}?)\s+(\d{1,4})/(\d{1}\b)\s*\(\s*([\d.]+)\s*\)',
-            full)
-        seen = []
-        for m in matches:
-            name = m[0].strip()
-            # Skip obvious non-team strings
-            if any(x in name.lower() for x in ['over','ball','run','wicket','inning','last','need','crr','rrr']): continue
-            if name not in seen:
-                seen.append((name, m[1], m[2], m[3]))
-            if len(seen) >= 2: break
-        for i, (name, runs, wkts, overs) in enumerate(seen[:2]):
-            key = "team1" if i == 0 else "team2"
-            if not data[key]["name"]:
-                data[key]["name"]  = name
-                data[key]["score"] = f"{runs}-{wkts}"
-                data[key]["overs"] = overs
-                score_found = True
-
-    # Strategy 3: og:title or title tag — "IND 185/3 (20) vs PAK 160/8 (20)"
-    if not score_found or not data["team1"]["name"]:
-        for tag in [soup.find("meta", property="og:title"), soup.find("meta", attrs={"name":"title"}), soup.find("title")]:
-            if not tag: continue
-            txt = tag.get("content", "") or tag.get_text(strip=True)
-            # Pattern: IND 185/3 vs PAK ...
-            og_m = re.search(
-                r'([A-Z][A-Za-z\s&]{1,18}?)\s+(\d{1,4})/(\d)\s*(?:\([\d.]+\))?\s+vs\.?\s+([A-Z][A-Za-z\s&]{1,18}?)\s*(?:(\d{1,4})/(\d))?',
-                txt)
-            if og_m:
-                data["team1"].update({"name": og_m.group(1).strip(), "score": f"{og_m.group(2)}-{og_m.group(3)}"})
-                data["team2"]["name"] = og_m.group(4).strip()
-                if og_m.group(5): data["team2"]["score"] = f"{og_m.group(5)}-{og_m.group(6)}"
-                score_found = True; break
-
-    # Strategy 4: miniscore API endpoint — try cricbuzz miniscore JSON directly
-    if not score_found or not data["team1"]["name"]:
+    # ── Team scores: Cricbuzz JSON API (PRIMARY — most reliable) ────────────────
+    mid_m = (re.search(r'/cricket-commentary/(\d+)', html) or
+             re.search(r'"matchId"\s*:\s*(\d+)', html) or
+             re.search(r'/live-cricket-scores/(\d+)/', html))
+    if mid_m:
         try:
-            # Extract match id from page URL or embedded data
-            mid_m = re.search(r'/(?:cricket-(?:scores|commentary)|live-cricket-scores)/(\d+)/', full)
-            if not mid_m:
-                mid_m = re.search(r'"matchId"\s*:\s*(\d+)', full)
-            if mid_m:
-                mid = mid_m.group(1)
-                api_url = f"https://www.cricbuzz.com/api/cricket-match/{mid}/miniscore"
-                r2 = requests.get(api_url, headers=HEADERS_API, timeout=8)
-                if r2.ok:
-                    mj = r2.json()
-                    ms = mj.get("miniscore", {})
-                    t1i = ms.get("matchScoreDetails", {}).get("inningsScoreList", [{}])
-                    bat_team = ms.get("batsmanStriker", {}).get("batTeamName","") or ms.get("batTeamName","")
-                    bowl_team = ms.get("bowlingTeam","")
-                    # inningsScoreList: [{inningsId,batTeamId,batTeamName,score,wickets,overs}]
-                    for inn in t1i:
-                        tn = inn.get("batTeamName","") or inn.get("teamName","")
-                        sc = inn.get("score","")
-                        wk = inn.get("wickets","")
-                        ov = inn.get("overs","")
-                        iid = inn.get("inningsId",0)
+            mid = mid_m.group(1)
+            api_url = f"https://www.cricbuzz.com/api/cricket-match/{mid}/miniscore"
+            r2 = requests.get(api_url, headers=HEADERS_API, timeout=8)
+            if r2.ok:
+                mj   = r2.json()
+                ms   = mj.get("miniscore", mj)
+                msd  = ms.get("matchScoreDetails", {})
+                mh   = mj.get("matchHeader", {})
+                inns = msd.get("inningsScoreList", [])
+                t1_name = (mh.get("team1",{}).get("name","") or mh.get("team1",{}).get("shortName",""))
+                t2_name = (mh.get("team2",{}).get("name","") or mh.get("team2",{}).get("shortName",""))
+                if inns:
+                    data["team1"]["score"] = ""
+                    data["team2"]["score"] = ""
+                    for inn in inns:
+                        tn  = inn.get("batTeamName","") or inn.get("teamName","")
+                        sc  = str(inn.get("score","0"))
+                        wk  = str(inn.get("wickets","0"))
+                        ov  = str(inn.get("overs","0"))
+                        iid = inn.get("inningsId", 0)
                         if not tn: continue
-                        key = "team1" if iid <= 2 else "team2"
-                        if iid in [2,4]: key = "team2"
-                        if not data[key]["name"]:
-                            data[key]["name"] = tn
-                            data[key]["score"] = f"{sc}-{wk}" if sc else ""
-                            data[key]["overs"] = str(ov)
-                        score_found = True
-        except: pass
+                        nm = lambda a,b: bool(a and b and (a.lower() in b.lower() or b.lower() in a.lower()))
+                        if nm(tn, t1_name):   key = "team1"
+                        elif nm(tn, t2_name): key = "team2"
+                        else: key = "team1" if iid % 2 == 1 else "team2"
+                        data[key]["name"]  = tn
+                        data[key]["score"] = f"{sc}-{wk}"
+                        data[key]["overs"] = ov
+                if not data["team1"]["name"] and t1_name: data["team1"]["name"] = t1_name
+                if not data["team2"]["name"] and t2_name: data["team2"]["name"] = t2_name
+                if ms.get("currentRunRate"):  data["crr"]  = str(ms["currentRunRate"])
+                if ms.get("requiredRunRate"): data["rrr"]  = str(ms["requiredRunRate"])
+                if ms.get("target"):          data["target"] = str(ms["target"])
+                ps = ms.get("partnerShip", {})
+                if ps: data["partnership"] = f"{ps.get('runs',0)}({ps.get('balls',0)})"
+                if ms.get("lastWicket"):      data["last_wicket"] = ms["lastWicket"]
+                cst = msd.get("customStatus","") or ms.get("status","")
+                if cst: data["match_status"] = cst[:50]
+                print(f"  API: {data['team1']['name']} {data['team1']['score']} vs {data['team2']['name']} {data['team2']['score']}")
+        except Exception as e:
+            print(f"  Miniscore API error: {e}")
 
-    # Strategy 5: page text regex — "TEAM 123-4 (12.3 ov)"
-    if not score_found or not data["team1"]["name"]:
-        pat5 = re.findall(r'([A-Z][A-Za-z\s&]{1,18}?)\s+(\d{1,4})-(\d)\s*\(\s*([\d.]+)\s*(?:ov|overs?)?\s*\)', full)
-        seen5 = []
-        for m in pat5:
-            nm = m[0].strip()
-            if any(x in nm.lower() for x in ['over','ball','run','wicket','inning','last','crr']): continue
-            seen5.append(m)
-            if len(seen5) >= 2: break
-        for i, m in enumerate(seen5[:2]):
-            key = "team1" if i == 0 else "team2"
-            if not data[key]["name"]:
-                data[key]["name"]  = m[0].strip()
-                data[key]["score"] = f"{m[1]}-{m[2]}"
-                data[key]["overs"] = m[3]
 
     # ── Fallback: meta description ────────────────────────────────────────────
     meta = soup.find("meta", {"name":"description"})

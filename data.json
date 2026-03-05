@@ -1,0 +1,14 @@
+{
+  "team1": {"name": "INDIA", "score": "185-3", "overs": "20.0", "flag_img": ""},
+  "team2": {"name": "PAKISTAN", "score": "142-8", "overs": "18.4", "flag_img": ""},
+  "crr": "7.65", "rrr": "0.00", "target": "186", "need": "",
+  "partnership": "45(32)", "match_status": "INDIA WON",
+  "yet_to_bat": "", "last_wicket": "Kohli b Bumrah 45(30)",
+  "current_over": 18, "last_over_balls": ["1","0","4","W","6","2"],
+  "current_ball": "2",
+  "batsman1": {"name":"Rohit Sharma","runs":85,"balls":52,"fours":8,"sixes":4,"sr":"163.46","on_strike":true,"photo":""},
+  "batsman2": {"name":"Virat Kohli","runs":45,"balls":30,"fours":5,"sixes":2,"sr":"150.00","on_strike":false,"photo":""},
+  "bowler": {"name":"Shaheen Afridi","overs":"3.4","maidens":0,"runs":32,"wickets":2,"economy":"8.72","photo":""},
+  "match_format": "T20I", "series_name": "India vs Pakistan T20I 2024",
+  "last_updated": "18:30:00"
+}
