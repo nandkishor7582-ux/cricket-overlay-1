@@ -190,8 +190,18 @@ def overlay():
     ensure_scraper(mid)
     with open(os.path.join(os.path.dirname(__file__), "livematch.html"), encoding="utf-8") as f:
         html = f.read()
-    html = html.replace("fetch('data.json?t='+Date.now())",
-                        f"fetch('/data/{mid}?t='+Date.now())")
+    # Point fetch to our data API
+    html = html.replace(
+        "fetch('data.json?t='+Date.now(),{cache:'no-store'})",
+        f"fetch('/data/{mid}?t='+Date.now(),{{cache:'no-store'}})"
+    )
+    # Also inject current data immediately so overlay shows on first load
+    state = get_state(mid)
+    init_data = json.dumps(state["data"])
+    html = html.replace(
+        "// Python server replaces this line with actual JSON each page load:\n// window.__LIVE_DATA = {...};   ← injected by /overlay route",
+        f"// Live data injected at page load:\ntry{{ const _d={init_data}; setTimeout(()=>{{ lastData=_d; applyData(_d); }}, 100); }}catch(e){{}}"
+    )
     return html
 
 @app.route("/data/<mid>")
