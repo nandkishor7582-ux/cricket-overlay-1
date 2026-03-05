@@ -125,7 +125,33 @@ def data_endpoint(match_id):
     resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp
 
-@app.route("/status")
+@app.route("/debug/<match_id>")
+def debug_endpoint(match_id):
+    """Shows full raw JSON + scraper status for a match. Useful for troubleshooting."""
+    match_id = re.sub(r'[^\d]', '', match_id)
+    if not match_id:
+        return "No match ID", 400
+    ensure_scraper(match_id)
+    state = get_or_create_match(match_id)
+    d = state["data"]
+    html = f"""<!DOCTYPE html><html><head><meta charset='UTF-8'>
+    <title>Debug {match_id}</title>
+    <style>body{{background:#05080f;color:#eee;font-family:monospace;padding:20px;}}
+    h2{{color:#FFD700;}} .ok{{color:#00ff88;}} .err{{color:#ff4444;}}
+    pre{{background:#0a1628;padding:16px;border-radius:8px;overflow:auto;font-size:13px;}}
+    </style></head><body>
+    <h2>🏏 Match {match_id} — Debug</h2>
+    <p>Last error: <span class='err'>{state.get('error','none')}</span></p>
+    <p>Last fetch: {datetime.fromtimestamp(state['last_fetch']).strftime('%H:%M:%S') if state['last_fetch'] else 'never'}</p>
+    <p>Team 1: <span class='ok'>{d['team1'].get('name','?')} — {d['team1'].get('score','?')} ({d['team1'].get('overs','?')} ov)</span></p>
+    <p>Team 2: <span class='ok'>{d['team2'].get('name','?')} — {d['team2'].get('score','?')} ({d['team2'].get('overs','?')} ov)</span></p>
+    <p>CRR: {d.get('crr','?')} | RRR: {d.get('rrr','?')} | Status: {d.get('match_status','?')}</p>
+    <p>Bat1: {d.get('batsman1',{}).get('name','?')} | Bat2: {d.get('batsman2',{}).get('name','?')} | Bowler: {d.get('bowler',{}).get('name','?')}</p>
+    <h2>Full JSON</h2>
+    <pre>{json.dumps(state['data'], indent=2)}</pre>
+    </body></html>"""
+    return html
+
 def status():
     """Shows all active matches."""
     with _match_lock:
