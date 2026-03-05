@@ -308,6 +308,47 @@ def _extract_miniscore_json(html):
 
     return result
 
+def _extract_scores_from_json(html):
+    """
+    Extract innings scores from the embedded Next.js JSON.
+    Returns list of {name, score, overs} dicts.
+    """
+    results = []
+    try:
+        # Look for inningsScore patterns: "runs":123,"wickets":4,"overs":"18.2"
+        for sm in re.finditer(r'<script[^>]*>(.*?)</script>', html, re.DOTALL):
+            content = sm.group(1)
+            if 'inningsScore' not in content and 'innings' not in content.lower():
+                continue
+            # Find innings entries with runs/wickets
+            entries = re.findall(
+                r'"(?:inningsScore|innings)[^"]*"[^{]*\{([^}]{0,400})\}', content
+            )
+            for entry in entries:
+                rm = re.search(r'"runs"[^:]*:\s*(\d+)', entry)
+                wm = re.search(r'"wickets"[^:]*:\s*(\d+)', entry)
+                om = re.search(r'"overs"[^:]*:\s*"?([\d.]+)"?', entry)
+                nm = re.search(r'"(?:batTeamName|teamName|bat_team|team)[^"]*"[^:]*:\s*"([^"]{2,30})"', entry)
+                if rm and wm:
+                    score = f"{rm.group(1)}-{wm.group(1)}"
+                    name = nm.group(1).strip() if nm else ""
+                    overs = om.group(1) if om else ""
+                    results.append({"name": name, "score": score, "overs": overs})
+            if results:
+                break
+        # Also try compact pattern: 123/4 (18.2 ov)
+        if not results:
+            pat = re.findall(
+                r'([A-Z][A-Za-z ]{2,20}?)\s*:?\s*(\d{1,4})/(\d{1,2})\s*[\(\[]?\s*([\d.]+)\s*(?:Ov|ov|overs)?',
+                html
+            )
+            for m in pat[:2]:
+                results.append({"name": m[0].strip(), "score": f"{m[1]}-{m[2]}", "overs": m[3]})
+    except Exception:
+        pass
+    return results
+
+
 # ─── Parser ───────────────────────────────────────────────────────────────────
 
 def parse(html, data):
@@ -360,26 +401,40 @@ def parse(html, data):
         parsed_teams = []
         for row in rows[:2]:
             raw = row.get_text(" ", strip=True)
+            # Try strict match first
             m = re.match(r'([A-Z][A-Za-z\s&]{0,20}?)\s+(\d{1,4})\s*/\s*(\d{1,2})\s*\(\s*([\d.]+)\s*\)', raw)
+            if not m:
+                # Broader match: just find team name and score pattern anywhere in string
+                m = re.search(r'([A-Z][A-Za-z]{1,20}(?:\s[A-Za-z]{1,15})?)\s+(\d{1,4})/(\d{1,2})\s*\(?([\d.]+)?', raw)
             if m:
-                parsed_teams.append({"name": m.group(1).strip(), "score": f"{m.group(2)}-{m.group(3)}", "overs": m.group(4)})
-        # Lock positions by name, assign on first parse
-        for pt in parsed_teams:
-            if data["team1"]["name"] and pt["name"] == data["team1"]["name"]:
-                data["team1"]["score"] = pt["score"]; data["team1"]["overs"] = pt["overs"]
-            elif data["team2"]["name"] and pt["name"] == data["team2"]["name"]:
-                data["team2"]["score"] = pt["score"]; data["team2"]["overs"] = pt["overs"]
-            elif not data["team1"]["name"]:
-                data["team1"].update(pt)
-            elif not data["team2"]["name"]:
-                data["team2"].update(pt)
-        # Track batting team (first team in Cricbuzz score block = currently batting)
-        if parsed_teams:
-            bat_name = parsed_teams[0]["name"]
-            if data["team2"]["name"] and bat_name == data["team2"]["name"]:
-                data["batting_team"] = 2
-            else:
-                data["batting_team"] = 1
+                overs = m.group(4) or ""
+                parsed_teams.append({"name": m.group(1).strip(), "score": f"{m.group(2)}-{m.group(3)}", "overs": overs})
+
+    # Also try finding scores directly from full text using broad patterns
+    if not score_blk:
+        score_patterns = re.findall(r'([A-Z][A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,4})/(\d{1,2})\s*\(\s*([\d.]+)\s*(?:Ov)?\)', full)
+        if score_patterns:
+            parsed_teams = [{"name": m[0].strip(), "score": f"{m[1]}-{m[2]}", "overs": m[3]} for m in score_patterns[:2]]
+        else:
+            parsed_teams = []
+
+    # Lock positions by name, assign on first parse
+    for pt in parsed_teams:
+        if data["team1"]["name"] and pt["name"] == data["team1"]["name"]:
+            data["team1"]["score"] = pt["score"]; data["team1"]["overs"] = pt["overs"]
+        elif data["team2"]["name"] and pt["name"] == data["team2"]["name"]:
+            data["team2"]["score"] = pt["score"]; data["team2"]["overs"] = pt["overs"]
+        elif not data["team1"]["name"]:
+            data["team1"].update(pt)
+        elif not data["team2"]["name"]:
+            data["team2"].update(pt)
+    # Track batting team (first team in Cricbuzz score block = currently batting)
+    if parsed_teams:
+        bat_name = parsed_teams[0]["name"]
+        if data["team2"]["name"] and bat_name == data["team2"]["name"]:
+            data["batting_team"] = 2
+        else:
+            data["batting_team"] = 1
 
     # ── Fallback: meta description ────────────────────────────────────────────
     meta = soup.find("meta", {"name":"description"})
@@ -392,6 +447,20 @@ def parse(html, data):
         if dm:
             data["team1"].update({"name":dm.group(1).strip(),"score":dm.group(2).replace("/","-"),"overs":dm.group(3)})
             data["team2"].update({"name":dm.group(4).strip(),"score":dm.group(5).replace("/","-")})
+
+    # ── Score from miniscore JSON (most reliable) ─────────────────────────────
+    # Extract innings scores from the embedded JSON
+    score_from_json = _extract_scores_from_json(html)
+    if score_from_json:
+        for sf in score_from_json:
+            if data["team1"]["name"] and sf["name"] and sf["name"].lower() in data["team1"]["name"].lower():
+                data["team1"]["score"] = sf["score"]; data["team1"]["overs"] = sf.get("overs","")
+            elif data["team2"]["name"] and sf["name"] and sf["name"].lower() in data["team2"]["name"].lower():
+                data["team2"]["score"] = sf["score"]; data["team2"]["overs"] = sf.get("overs","")
+            elif not data["team1"]["name"] and sf.get("name"):
+                data["team1"].update({"name":sf["name"],"score":sf["score"],"overs":sf.get("overs","")})
+            elif not data["team2"]["name"] and sf.get("name"):
+                data["team2"].update({"name":sf["name"],"score":sf["score"],"overs":sf.get("overs","")})
 
     # ── Embedded Next.js miniscore JSON ──────────────────────────────────────
     bat_names = []
